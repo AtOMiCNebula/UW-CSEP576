@@ -1,6 +1,7 @@
 #include "mainwindow.h"
 #include "ui_mainwindow.h"
 #include <QtGui>
+#include <QFileDialog>
 
 static const QSize resultSize(640, 480);
 
