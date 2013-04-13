@@ -175,7 +175,66 @@ void MainWindow::HalfImage(QImage &image)
 
 void MainWindow::GaussianBlurImage(QImage *image, double sigma)
 {
-    // Add your code here.  Look at MeanBlurImage to get yourself started.
+    if (sigma <= 0)
+    {
+        return;
+    }
+
+    // Calculate the kernel (some extra computation/storage, should be fine...)
+    double twoSigSq = 2.0 * pow(sigma, 2);
+    int kernelHalfSide = static_cast<int>(ceil(3 * sigma));
+    int kernelSize = ((2 * kernelHalfSide) + 1);
+    double *kernel = new double[kernelSize * kernelSize];
+    for (int i = 0; i < kernelSize; i++)
+    {
+        int y = (i - kernelHalfSide);
+        for (int j = 0; j < kernelSize; j++)
+        {
+            int x = (j - kernelHalfSide);
+            kernel[i*kernelSize+j] = (1.0 / (M_PI*twoSigSq)) * pow(M_E, -1*(pow(x,2.0)+pow(y,2.0))/twoSigSq);
+        }
+    }
+
+    // Generate the updated image
+    int height = image->height();
+    int width = image->width();
+    QImage buffer = image->copy(-kernelHalfSide, -kernelHalfSide, width + 2*kernelHalfSide, height + 2*kernelHalfSide );
+    for (int y = 0; y < height; y++)
+    {
+        for (int x = 0; x < width; x++)
+        {
+            double rgb[3];
+            rgb[0] = 0.0;
+            rgb[1] = 0.0;
+            rgb[2] = 0.0;
+
+            for (int fy = 0; fy < kernelSize; fy++)
+            {
+                for (int fx = 0; fx < kernelSize; fx++)
+                {
+                    // Translate to coordinates in buffer space
+                    // (kernelHalfSide-length borders on each side)
+                    int bx = kernelHalfSide + x + (fx-kernelHalfSide);
+                    int by = kernelHalfSide + y + (fy-kernelHalfSide);
+
+                    double kernelWeight = kernel[fy*kernelSize+fx];
+                    QRgb pixel = buffer.pixel(bx, by);
+                    rgb[0] += kernelWeight*qRed(pixel);
+                    rgb[1] += kernelWeight*qGreen(pixel);
+                    rgb[2] += kernelWeight*qBlue(pixel);
+                }
+            }
+
+            image->setPixel(x, y, qRgb(
+                        static_cast<int>(floor(rgb[0]+0.5)),
+                        static_cast<int>(floor(rgb[1]+0.5)),
+                        static_cast<int>(floor(rgb[2]+0.5))
+                    ));
+        }
+    }
+
+    // Clean up!
+    delete[] kernel;
 }
 
 void MainWindow::SeparableGaussianBlurImage(QImage *image, double sigma)
