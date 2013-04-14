@@ -207,9 +207,9 @@ void ConvolveHelper(QImage *image, double *kernel, int kernelWidth, int kernelHe
             }
 
             image->setPixel(x, y, qRgb(
-                        static_cast<int>(floor(rgb[0]+0.5)),
-                        static_cast<int>(floor(rgb[1]+0.5)),
-                        static_cast<int>(floor(rgb[2]+0.5))
+                        min(255, static_cast<int>(floor(rgb[0]+0.5))),
+                        min(255, static_cast<int>(floor(rgb[1]+0.5))),
+                        min(255, static_cast<int>(floor(rgb[2]+0.5)))
                     ));
         }
     }
