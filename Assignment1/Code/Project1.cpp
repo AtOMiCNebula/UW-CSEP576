@@ -173,6 +173,13 @@ void MainWindow::HalfImage(QImage &image)
 
 
 
+QRgb ClampPixel(int r, int g, int b)
+{
+    return qRgb(max(0, min(255, r)),
+                max(0, min(255, g)),
+                max(0, min(255, b)));
+}
+
 void ConvolveHelper(QImage *image, double *kernel, int kernelWidth, int kernelHeight, bool fForDerivative)
 {
     int height = image->height();
@@ -204,11 +211,10 @@ void ConvolveHelper(QImage *image, double *kernel, int kernelWidth, int kernelHe
                 }
             }
 
-            image->setPixel(x, y, qRgb(
-                        max(0, min(255, static_cast<int>(floor(rgb[0]+0.5)))),
-                        max(0, min(255, static_cast<int>(floor(rgb[1]+0.5)))),
-                        max(0, min(255, static_cast<int>(floor(rgb[2]+0.5))))
-                    ));
+            image->setPixel(x, y, ClampPixel(static_cast<int>(floor(rgb[0]+0.5)),
+                        static_cast<int>(floor(rgb[1]+0.5)),
+                        static_cast<int>(floor(rgb[2]+0.5)))
+                    );
         }
     }
 }
@@ -305,7 +311,27 @@ void MainWindow::SecondDerivImage(QImage *image, double sigma)
 
 void MainWindow::SharpenImage(QImage *image, double sigma, double alpha)
 {
-    // Add your code here.  It's probably easiest to call SecondDerivImage as a helper function.
+    // Generate the second derivative
+    QImage imageSecondDeriv(*image);
+    SecondDerivImage(&imageSecondDeriv, sigma);
+
+    // Subtract the second derivative from our original image
+    int height = image->height();
+    int width = image->width();
+    for (int y = 0; y < height; y++)
+    {
+        for (int x = 0; x < width; x++)
+        {
+            QRgb pixel = image->pixel(x, y);
+            QRgb pixelSecondDeriv = imageSecondDeriv.pixel(x, y);
+
+            image->setPixel(x, y, ClampPixel(
+                        qRed(pixel) - alpha*(qRed(pixelSecondDeriv)-128),
+                        qGreen(pixel) - alpha*(qGreen(pixelSecondDeriv)-128),
+                        qBlue(pixel) - alpha*(qBlue(pixelSecondDeriv)-128)
+                    ));
+        }
+    }
 }
 
 void MainWindow::BilateralImage(QImage *image, double sigmaS, double sigmaI)
