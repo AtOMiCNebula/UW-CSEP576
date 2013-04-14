@@ -173,7 +173,7 @@ void MainWindow::HalfImage(QImage &image)
 
 
 
-void ConvolveHelper(QImage *image, double *kernel, int kernelWidth, int kernelHeight)
+void ConvolveHelper(QImage *image, double *kernel, int kernelWidth, int kernelHeight, bool fForDerivative)
 {
     int height = image->height();
     int width = image->width();
@@ -186,9 +186,7 @@ void ConvolveHelper(QImage *image, double *kernel, int kernelWidth, int kernelHe
         for (int x = 0; x < width; x++)
         {
             double rgb[3];
-            rgb[0] = 0.0;
-            rgb[1] = 0.0;
-            rgb[2] = 0.0;
+            rgb[0] = rgb[1] = rgb[2] = (!fForDerivative ? 0.0 : 128.0);
 
             for (int fy = 0; fy < kernelHeight; fy++)
             {
@@ -207,9 +205,9 @@ void ConvolveHelper(QImage *image, double *kernel, int kernelWidth, int kernelHe
             }
 
             image->setPixel(x, y, qRgb(
-                        min(255, static_cast<int>(floor(rgb[0]+0.5))),
-                        min(255, static_cast<int>(floor(rgb[1]+0.5))),
-                        min(255, static_cast<int>(floor(rgb[2]+0.5)))
+                        max(0, min(255, static_cast<int>(floor(rgb[0]+0.5)))),
+                        max(0, min(255, static_cast<int>(floor(rgb[1]+0.5)))),
+                        max(0, min(255, static_cast<int>(floor(rgb[2]+0.5))))
                     ));
         }
     }
@@ -238,7 +236,7 @@ void MainWindow::GaussianBlurImage(QImage *image, double sigma)
     }
 
     // Generate the updated image
-    ConvolveHelper(image, kernel, kernelSize, kernelSize);
+    ConvolveHelper(image, kernel, kernelSize, kernelSize, false/*fForDerivative*/);
 
     // Clean up!
     delete[] kernel;
@@ -264,8 +262,8 @@ void MainWindow::SeparableGaussianBlurImage(QImage *image, double sigma)
     }
 
     // Generate the updated image
-    ConvolveHelper(image, kernel, kernelSize, 1);
-    ConvolveHelper(image, kernel, 1, kernelSize);
+    ConvolveHelper(image, kernel, kernelSize, 1, false/*fForDerivative*/);
+    ConvolveHelper(image, kernel, 1, kernelSize, false/*fForDerivative*/);
 
     // Clean up!
     delete[] kernel;
@@ -273,12 +271,36 @@ void MainWindow::SeparableGaussianBlurImage(QImage *image, double sigma)
 
 void MainWindow::FirstDerivImage(QImage *image, double sigma)
 {
-    // Add your code here.
+    if (sigma <= 0)
+    {
+        return;
+    }
+
+    // Construct the kernel
+    double kernel[3] = { -1.0, 0.0, 1.0 };
+
+    // Generate the updated image
+    ConvolveHelper(image, kernel, 3, 1, true/*fForDerivative*/);
+    GaussianBlurImage(image, sigma);
 }
 
 void MainWindow::SecondDerivImage(QImage *image, double sigma)
 {
-    // Add your code here.
+    if (sigma <= 0)
+    {
+        return;
+    }
+
+    // Construct the kernel
+    // (This is inverted relative to what the lecture slides suggested,
+    // otherwise the colors come out backwards...)
+    double kernel[9] = { 0.0,  1.0, 0.0,
+                         1.0, -4.0, 1.0,
+                         0.0,  1.0, 0.0 };
+
+    // Generate the updated image
+    ConvolveHelper(image, kernel, 3, 3, true/*fForDerivative*/);
+    GaussianBlurImage(image, sigma);
 }
 
 void MainWindow::SharpenImage(QImage *image, double sigma, double alpha)
