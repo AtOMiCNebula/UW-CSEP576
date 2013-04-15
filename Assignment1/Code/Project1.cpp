@@ -200,11 +200,11 @@ void ConvolveHelper(QImage *image, double *kernel, int kernelWidth, int kernelHe
                 for (int fx = 0; fx < kernelWidth; fx++)
                 {
                     // Translate to coordinates in buffer space
-                    int by = kernelHalfHeight + y + (fy-kernelHalfHeight);
-                    int bx = kernelHalfWidth + x + (fx-kernelHalfWidth);
+                    int by = y + fy;
+                    int bx = x + fx;
 
-                    double kernelWeight = kernel[fy*kernelWidth+fx];
                     QRgb pixel = buffer.pixel(bx, by);
+                    double kernelWeight = kernel[fy*kernelWidth+fx];
                     rgb[0] += kernelWeight*qRed(pixel);
                     rgb[1] += kernelWeight*qGreen(pixel);
                     rgb[2] += kernelWeight*qBlue(pixel);
@@ -341,31 +341,65 @@ void MainWindow::BilateralImage(QImage *image, double sigmaS, double sigmaI)
 
 void MainWindow::SobelImage(QImage *image)
 {
-    // Add your code here.
+    double kernelX[9] = { -1,  0,  1,
+                          -2,  0,  2,
+                          -1,  0,  1 };
+    double kernelY[9] = {  1,  2,  1,
+                           0,  0,  0,
+                          -1, -2, -1 };
 
-    /***********************************************************************
-      When displaying the orientation image I
-      recommend the following:
+    // We need to convolve two kernels simultaneously to build our result...so
+    // I'll duplicate a lot of ConvolveHelper's code here, along with the Sobel
+    // helper code.
+    QImage buffer = image->copy(-1, -1, image->width()+1, image->height()+1);
+    int height = image->height();
+    int width = image->width();
+    for (int y = 0; y < height; y++)
+    {
+        for (int x = 0; x < width; x++)
+        {
+            double rgbX[3] = { 0.0, 0.0, 0.0 };
+            double rgbY[3] = { 0.0, 0.0, 0.0 };
 
-    double mag; // magnitude of the gradient
-    double orien; // orientation of the gradient
+            for (int fy = 0; fy < 3; fy++)
+            {
+                for (int fx = 0; fx < 3; fx++)
+                {
+                    // Translate to coordinates in buffer space
+                    int by = y + fy;
+                    int bx = x + fx;
 
-    double red = (sin(orien) + 1.0)/2.0;
-    double green = (cos(orien) + 1.0)/2.0;
-    double blue = 1.0 - red - green;
+                    QRgb pixel = buffer.pixel(bx, by);
+                    double kernelWeightX = kernelX[fy*3+fx];
+                    rgbX[0] += kernelWeightX*qRed(pixel);
+                    rgbX[1] += kernelWeightX*qGreen(pixel);
+                    rgbX[2] += kernelWeightX*qBlue(pixel);
+                    double kernelWeightY = kernelY[fy*3+fy];
+                    rgbY[0] += kernelWeightY*qRed(pixel);
+                    rgbY[1] += kernelWeightY*qGreen(pixel);
+                    rgbY[2] += kernelWeightY*qBlue(pixel);
+                }
+            }
 
-    red *= mag*4.0;
-    green *= mag*4.0;
-    blue *= mag*4.0;
+            // Using the intensity function from BlackWhiteImage:
+            double intensityX = 0.3*rgbX[0] + 0.6*rgbX[1] + 0.1*rgbX[2];
+            double intensityY = 0.3*rgbY[0] + 0.6*rgbY[1] + 0.1*rgbY[2];
 
-    // Make sure the pixel values range from 0 to 255
-    red = min(255.0, max(0.0, red));
-    green = min(255.0, max(0.0, green));
-    blue = min(255.0, max(0.0, blue));
+            // Provided Sobel helper code
+            double mag = sqrt(pow(intensityX, 2) + pow(intensityY, 2));
+            double orien = atan2(intensityY, intensityX);
+            double red = (sin(orien) + 1.0)/2.0;
+            double green = (cos(orien) + 1.0)/2.0;
+            double blue = 1.0 - red - green;
+            red *= mag*4.0;
+            green *= mag*4.0;
+            blue *= mag*4.0;
 
-    image->setPixel(c, r, qRgb( (int) (red), (int) (green), (int) (blue)));
-
-    ************************************************************************/
+            image->setPixel(x, y, ClampPixel(static_cast<int>(floor(red+0.5)),
+                                             static_cast<int>(floor(green+0.5)),
+                                             static_cast<int>(floor(blue+0.5))));
+        }
+    }
 }
 
 
