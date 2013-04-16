@@ -351,7 +351,7 @@ void MainWindow::SobelImage(QImage *image)
     // We need to convolve two kernels simultaneously to build our result...so
     // I'll duplicate a lot of ConvolveHelper's code here, along with the Sobel
     // helper code.
-    QImage buffer = image->copy(-1, -1, image->width()+1, image->height()+1);
+    QImage buffer = image->copy(-1, -1, image->width()+2, image->height()+2);
     int height = image->height();
     int width = image->width();
     for (int y = 0; y < height; y++)
