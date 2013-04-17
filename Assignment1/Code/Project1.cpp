@@ -477,7 +477,100 @@ void MainWindow::RotateImage(QImage *image, double orien)
 
 void MainWindow::FindPeaksImage(QImage *image, double thres)
 {
-    // Add your code here.
+    double kernelX[9] = { -1,  0,  1,
+                          -2,  0,  2,
+                          -1,  0,  1 };
+    double kernelY[9] = {  1,  2,  1,
+                           0,  0,  0,
+                          -1, -2, -1 };
+
+    // Modified version of our previous big Sobel loop.  With this modified
+    // version, just compute magnitudes and store it in an array in a special
+    // pixel space, to be pulled out later in the second run through.
+    QImage buffer = image->copy(-1, -1, image->width()+2, image->height()+2);
+    QImage magnitudes(image->size(), image->format());
+    int height = image->height();
+    int width = image->width();
+    for (int y = 0; y < height; y++)
+    {
+        for (int x = 0; x < width; x++)
+        {
+            double rgbX[3] = { 0.0, 0.0, 0.0 };
+            double rgbY[3] = { 0.0, 0.0, 0.0 };
+
+            for (int fy = 0; fy < 3; fy++)
+            {
+                for (int fx = 0; fx < 3; fx++)
+                {
+                    // Translate to coordinates in buffer space
+                    int by = y + fy;
+                    int bx = x + fx;
+
+                    QRgb pixel = buffer.pixel(bx, by);
+                    double kernelWeightX = kernelX[fy*3+fx];
+                    rgbX[0] += kernelWeightX*qRed(pixel);
+                    rgbX[1] += kernelWeightX*qGreen(pixel);
+                    rgbX[2] += kernelWeightX*qBlue(pixel);
+                    double kernelWeightY = kernelY[fy*3+fy];
+                    rgbY[0] += kernelWeightY*qRed(pixel);
+                    rgbY[1] += kernelWeightY*qGreen(pixel);
+                    rgbY[2] += kernelWeightY*qBlue(pixel);
+                }
+            }
+
+            // Using the intensity function from BlackWhiteImage:
+            double intensityX = 0.3*rgbX[0] + 0.6*rgbX[1] + 0.1*rgbX[2];
+            double intensityY = 0.3*rgbY[0] + 0.6*rgbY[1] + 0.1*rgbY[2];
+
+            double mag = sqrt(pow(intensityX, 2) + pow(intensityY, 2));
+
+            // Store this information in our magnitudes "image", to interpolate
+            // later...
+            // red channel   = magnitude/6
+            // green channel = intensityX/8+128
+            // blue channel  = intensityY//8+128
+            magnitudes.setPixel(x, y, qRgb(static_cast<int>(floor((mag/6)+0.5)),
+                                           static_cast<int>(floor((intensityX/8+128)+0.5)),
+                                           static_cast<int>(floor((intensityY/8+128)+0.5))));
+        }
+    }
+
+    // Now that our magnitudes are built up, loop over again...
+    for (int y = 0; y < height; y++)
+    {
+        for (int x = 0; x < width; x++)
+        {
+            // Rebuild mag and orien from our magnitudes "image"
+            QRgb pixel = magnitudes.pixel(x, y);
+            int mag = (qRed(pixel) * 6);
+            double intensityX = ((qGreen(pixel) - 128) * 8);
+            double intensityY = ((qBlue(pixel) - 128) * 8);
+            double orien = atan2(intensityY, intensityX);
+
+            // Determine the coordinates on either side of us that are
+            // perpendicular to our orientation.
+            double e0x = x + 1*cos(orien+M_PI/2.0);
+            double e0y = y + 1*sin(orien+M_PI/2.0);
+            double e1x = x + 1*cos(orien-M_PI/2.0);
+            double e1y = y + 1*sin(orien-M_PI/2.0);
+
+            // Interpolate the "RGB" values of our two perpendicular pixels.
+            // They're not actually RGB, they're in a pixel space described
+            // above for the magnitudes array.
+            double rgb0[3];
+            BilinearInterpolation(&magnitudes, e0x, e0y, rgb0);
+            int intensity0 = (rgb0[0] * 6);
+            double rgb1[3];
+            BilinearInterpolation(&magnitudes, e1x, e1y, rgb1);
+            int intensity1 = (rgb1[0] * 6);
+
+            // Finally, check for peak response, and if so, set a white pixel.
+            bool fPeakResponse = (mag > thres && mag > intensity0 && mag > intensity1);
+            image->setPixel(x, y, qRgb((fPeakResponse ? 255 : 0),
+                                       (fPeakResponse ? 255 : 0),
+                                       (fPeakResponse ? 255 : 0)));
+        }
+    }
 }
 
 
