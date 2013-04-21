@@ -248,6 +248,54 @@ bool MainWindow::ComputeHomography(CMatches *matches, int numMatches, double h[3
 *******************************************************************************
 *******************************************************************************/
 
+void ConvolveHelper(double *image, int width, int height, double *kernel, int kernelWidth, int kernelHeight)
+{
+    int kernelHalfHeight = (kernelHeight / 2);
+    int kernelHalfWidth = (kernelWidth / 2);
+
+    // Create and initialize our buffer
+    int bufferHeight = (height + 2*kernelHalfHeight);
+    int bufferWidth = (width + 2*kernelHalfWidth);
+    double *buffer = new double[bufferWidth*bufferHeight];
+    for (int by = 0; by < bufferHeight; by++)
+    {
+        for (int bx = 0; bx < bufferWidth; bx++)
+        {
+            int iy = (by - kernelHalfHeight);
+            int ix = (bx - kernelHalfWidth);
+
+            buffer[by*bufferWidth+bx] =
+                    ((0 <= iy && iy < height && 0 <= ix && ix < width) ?
+                         image[iy*width+ix] : 0.0);
+        }
+    }
+
+    // Now, convolve the kernel over the image
+    for (int iy = 0; iy < height; iy++)
+    {
+        for (int ix = 0; ix < width; ix++)
+        {
+            double result = 0.0;
+            for (int ky = 0; ky < kernelHeight; ky++)
+            {
+                for (int kx = 0; kx < kernelWidth; kx++)
+                {
+                    double kernelWeight = kernel[ky*kernelWidth+kx];
+
+                    // Translate to coordinates in buffer space
+                    int by = iy + ky;
+                    int bx = ix + kx;
+                    result += kernelWeight*buffer[by*bufferWidth+bx];
+                }
+            }
+
+            image[iy*width+ix] = result;
+        }
+    }
+
+    // Clean up!
+    delete[] buffer;
+}
 
 /*******************************************************************************
 Blur a single channel floating point image with a Gaussian.
@@ -260,10 +308,29 @@ Blur a single channel floating point image with a Gaussian.
 *******************************************************************************/
 void MainWindow::SeparableGaussianBlurImage(double *image, int w, int h, double sigma)
 {
-    // Add your code here
+    if (sigma <= 0)
+    {
+        return;
+    }
 
-    // To access the pixel (c,r), use image[r*width + c].
+    // Calculate the kernel (some extra computation/storage, should be fine...)
+    double twoSigSq = 2.0 * pow(sigma, 2);
+    double sigSqRt = sigma * sqrt(2*M_PI);
+    int kernelHalfSide = static_cast<int>(ceil(3 * sigma));
+    int kernelSize = ((2 * kernelHalfSide) + 1);
+    double *kernel = new double[kernelSize];
+    for (int i = 0; i < kernelSize; i++)
+    {
+        int y = (i - kernelHalfSide);
+        kernel[i] = (1.0 / (sigSqRt)) * pow(M_E, -1*(pow(y,2.0))/twoSigSq);
+    }
 
+    // Generate the updated image
+    ConvolveHelper(image, w, h, kernel, kernelSize, 1);
+    ConvolveHelper(image, w, h, kernel, 1, kernelSize);
+
+    // Clean up!
+    delete[] kernel;
 }
 
 
@@ -408,8 +475,33 @@ Bilinearly interpolate image (helper function for Stitch)
 *******************************************************************************/
 bool MainWindow::BilinearInterpolation(QImage *image, double x, double y, double rgb[3])
 {
-    // Add your code here.
+    int height = image->height();
+    int width = image->width();
+    int x1 = static_cast<int>(floor(x));
+    int y1 = static_cast<int>(floor(y));
+    int x2 = static_cast<int>(ceil(x+0.00001));
+    int y2 = static_cast<int>(ceil(y+0.00001));
 
+    QRgb pixel11 = ((0 <= x1 && x1 < width && 0 <= y1 && y1 < height) ?
+                        image->pixel(x1, y1) : qRgb(0, 0, 0));
+    QRgb pixel12 = ((0 <= x1 && x1 < width && 0 <= y2 && y2 < height) ?
+                        image->pixel(x1, y2) : qRgb(0, 0, 0));
+    QRgb pixel21 = ((0 <= x2 && x2 < width && 0 <= y1 && y1 < height) ?
+                        image->pixel(x2, y1) : qRgb(0, 0, 0));
+    QRgb pixel22 = ((0 <= x2 && x2 < width && 0 <= y2 && y2 < height) ?
+                        image->pixel(x2, y2) : qRgb(0, 0, 0));
+
+    for (int i = 0; i < 3; i++)
+    {
+        int (*colorfn)(QRgb) = (i == 0 ? qRed : (i == 1 ? qGreen : qBlue));
+        rgb[i] = (1 / ((x2-x1)*(y2-y1))) *
+                (((*colorfn)(pixel11)*(x2-x)*(y2-y)) +
+                 ((*colorfn)(pixel21)*(x-x1)*(y2-y)) +
+                 ((*colorfn)(pixel12)*(x2-x)*(y-y1)) +
+                 ((*colorfn)(pixel22)*(x-x1)*(y-y1)));
+    }
+
+    // What is this for?
     return true;
 }
 
