@@ -555,13 +555,85 @@ void MainWindow::MatchInterestPoints(QImage image1, CIntPt *interestPts1, int nu
     ComputeDescriptors(image1, interestPts1, numInterestsPts1);
     ComputeDescriptors(image2, interestPts2, numInterestsPts2);
 
-    // Add your code here for finding the best matches for each point.
+    // Find the best matches!
+    int numMatchesTemp = 0;
+    for (int img1 = 0; img1 < numInterestsPts1; img1++)
+    {
+        // Make sure this interest point has a valid descriptor
+        if (interestPts1[img1].m_DescSize == 0)
+        {
+            continue;
+        }
 
-    // Once you uknow the number of matches allocate an array as follows:
-    // *matches = new CMatches [numMatches];
-    //
-    // The position of the interest point in iamge 1 is (m_X1, m_Y1)
-    // The position of the interest point in image 2 is (m_X2, m_Y2)
+        // Next, check if we need to expand our matches array
+        if (numMatches == numMatchesTemp)
+        {
+            int newSize = numMatchesTemp + 10;
+            CMatches *temp = new CMatches[newSize];
+            if (numMatches > 0)
+            {
+                for (int i = 0; i < numMatchesTemp; i++)
+                {
+                    temp[i] = (*matches)[i];
+                }
+                delete[] (*matches);
+            }
+            *matches = temp;
+            numMatchesTemp = newSize;
+        }
+
+        int img2Closest = -1;
+        double img2ClosestDistance = 0;
+
+        for (int img2 = 0; img2 < numInterestsPts2; img2++)
+        {
+            // Make sure this interest point has a valid descriptor
+            if (interestPts2[img2].m_DescSize == 0)
+            {
+                continue;
+            }
+
+            // Now, compare the two descriptors to see if they are good matches
+            double distance = sqrt(
+                    pow(interestPts1[img1].m_Desc[0]-interestPts2[img2].m_Desc[0], 2) +
+                    pow(interestPts1[img1].m_Desc[1]-interestPts2[img2].m_Desc[1], 2) +
+                    pow(interestPts1[img1].m_Desc[2]-interestPts2[img2].m_Desc[2], 2) +
+                    pow(interestPts1[img1].m_Desc[3]-interestPts2[img2].m_Desc[3], 2) +
+                    pow(interestPts1[img1].m_Desc[4]-interestPts2[img2].m_Desc[4], 2) +
+                    pow(interestPts1[img1].m_Desc[5]-interestPts2[img2].m_Desc[5], 2) +
+                    pow(interestPts1[img1].m_Desc[6]-interestPts2[img2].m_Desc[6], 2) +
+                    pow(interestPts1[img1].m_Desc[7]-interestPts2[img2].m_Desc[7], 2)
+                );
+            if (img2Closest == -1 || distance < img2ClosestDistance)
+            {
+                img2Closest = img2;
+                img2ClosestDistance = distance;
+            }
+        }
+
+        // If we found a good match, add it to the array!
+        if (img2Closest != -1)
+        {
+            (*matches)[numMatches].m_X1 = interestPts1[img1].m_X;
+            (*matches)[numMatches].m_Y1 = interestPts1[img1].m_Y;
+            (*matches)[numMatches].m_X2 = interestPts2[img2Closest].m_X;
+            (*matches)[numMatches].m_Y2 = interestPts2[img2Closest].m_Y;
+            numMatches++;
+        }
+    }
+
+    // Now that we've found all the matches we're going to find, shrink the
+    // array of matches if needed
+    if (numMatches != numMatchesTemp)
+    {
+        CMatches *temp = new CMatches[numMatches];
+        for (int i = 0; i < numMatches; i++)
+        {
+            temp[i] = (*matches)[i];
+        }
+        delete[] (*matches);
+        *matches = temp;
+    }
 
     // Draw the matches
     DrawMatches(*matches, numMatches, image1Display, image2Display);
