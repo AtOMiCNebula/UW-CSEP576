@@ -837,11 +837,68 @@ void MainWindow::Stitch(QImage image1, QImage image2, double hom[3][3], double h
     int ws = 0;
     int hs = 0;
 
-    // Add your code to compute ws and hs here.
+    int w1 = image1.width();
+    int h1 = image1.height();
+    int w2 = image2.width();
+    int h2 = image2.height();
+
+    // Project four corners of image2 into image1's coordinate system
+    double cornerX_NW;
+    double cornerY_NW;
+    Project(0, 0, cornerX_NW, cornerY_NW, homInv);
+    double cornerX_NE;
+    double cornerY_NE;
+    Project(w2-1, 0, cornerX_NE, cornerY_NE, homInv);
+    double cornerX_SE;
+    double cornerY_SE;
+    Project(w2-1, h2-1, cornerX_SE, cornerY_SE, homInv);
+    double cornerX_SW;
+    double cornerY_SW;
+    Project(0, h2-1, cornerX_SW, cornerY_SW, homInv);
+
+    // Calculate the width and height of stitchedImage using projected corners
+    double minWidth = min(min(cornerX_NW, cornerX_NE), min(cornerX_SE, cornerX_SW));
+    double minHeight = min(min(cornerY_NW, cornerY_NE), min(cornerY_SE, cornerY_SW));
+    double maxWidth = max(max(cornerX_NW, cornerX_NE), max(cornerX_SE, cornerX_SW));
+    double maxHeight = max(max(cornerY_NW, cornerY_NE), max(cornerY_SE, cornerY_SW));
+    int stitchedXOffset = abs(min(0, static_cast<int>(floor(minWidth))));
+    int stitchedYOffset = abs(min(0, static_cast<int>(floor(minHeight))));
+    ws = stitchedXOffset + max(w1, static_cast<int>(ceil(maxWidth)));
+    hs = stitchedYOffset + max(h1, static_cast<int>(ceil(maxHeight)));
 
     stitchedImage = QImage(ws, hs, QImage::Format_RGB32);
     stitchedImage.fill(qRgb(0,0,0));
 
-    // Add you code to warp image1 and image2 to stitchedImage here.
+    // Copy image1 into stitchedImage
+    for (int y = 0; y < h1; y++)
+    {
+        for (int x = 0; x < w1; x++)
+        {
+            stitchedImage.setPixel(stitchedXOffset+x, stitchedYOffset+y, image1.pixel(x, y));
+        }
+    }
+
+    // Warp image2 onto the stitched image by projecting the stitched image
+    // coordinates into image2's coordinate system, and bilinearly interpolating
+    // to get the pixel value
+    for (int y = 0; y < hs; y++)
+    {
+        for (int x = 0; x < ws; x++)
+        {
+            double x2Projected;
+            double y2Projected;
+            Project(x-stitchedXOffset, y-stitchedYOffset, x2Projected, y2Projected, hom);
+
+            if (0 <= x2Projected && x2Projected < w2 && 0 <= y2Projected && y2Projected < h2)
+            {
+                double rgb[3];
+                BilinearInterpolation(&image2, x2Projected, y2Projected, rgb);
+
+                stitchedImage.setPixel(x, y, qRgb(static_cast<int>(floor(rgb[0]+0.5)),
+                                                  static_cast<int>(floor(rgb[1]+0.5)),
+                                                  static_cast<int>(floor(rgb[2]+0.5))));
+            }
+        }
+    }
 }
 
