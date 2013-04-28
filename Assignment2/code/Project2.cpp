@@ -362,20 +362,171 @@ void MainWindow::HarrisCornerDetector(QImage image, double sigma, double thres, 
             buffer[r*w + c] = (double) qGreen(pixel);
         }
 
-    // Write your Harris corner detection code here.
+    // Compute the x and y derivatives on the image
+    double *derivX = new double[w*h];
+    double *derivY = new double[w*h];
+    for (int y = 0; y < h; y++)
+    {
+        for (int x = 0; x < w; x++)
+        {
+            derivX[y*w+x] = derivY[y*w+x] = buffer[y*w+x];
+        }
+    }
+    double derivKernel[] = { -1, 0, 1 };
+    ConvolveHelper(derivX, w, h, derivKernel, 1, 3);
+    ConvolveHelper(derivY, w, h, derivKernel, 3, 1);
 
-    // Once you uknow the number of interest points allocate an array as follows:
-    // *interestPts = new CIntPt [numInterestsPts];
-    // Access the values using: (*interestPts)[i].m_X = 5.0;
-    //
-    // The position of the interest point is (m_X, m_Y)
-    // The descriptor of the interest point is stored in m_Desc
-    // The length of the descriptor is m_DescSize, if m_DescSize = 0, then it is not valid.
+    // Compute derivX2, derivY2, and derivXY, then apply gaussian blur
+    double *derivX2 = new double[w*h];
+    double *derivY2 = new double[w*h];
+    double *derivXY = new double[w*h];
+    for (int y = 0; y < h; y++)
+    {
+        for (int x = 0; x < w; x++)
+        {
+            double dX = derivX[y*w+x];
+            double dY = derivY[y*w+x];
 
-    // Once you are done finding the interest points, display them on the image
-    DrawInterestPoints(*interestPts, numInterestsPts, imageDisplay);
+            derivX2[y*w+x] = pow(dX, 2);
+            derivY2[y*w+x] = pow(dY, 2);
+            derivXY[y*w+x] = (dX * dY);
+        }
+    }
+    SeparableGaussianBlurImage(derivX2, w, h, sigma);
+    SeparableGaussianBlurImage(derivY2, w, h, sigma);
+    SeparableGaussianBlurImage(derivXY, w, h, sigma);
+
+    // Compute the Harris response
+    double *harrisResponse = new double[w*h];
+    for (int y = 0; y < h; y++)
+    {
+        for (int x = 0; x < w; x++)
+        {
+            double dX2 = derivX2[y*w+x];
+            double dY2 = derivY2[y*w+x];
+            double dXY = derivXY[y*w+x];
+
+            // I'm just performing the math directly without constructing
+            // the covariance matrix, H.  It would look like this:
+            // [  dX2  dXY
+            //    dXY  dY2  ]
+
+            // Harris response: R = determinant(H) / trace(H)
+            double determinant = (dX2 * dY2) - (dXY * dXY);
+            double trace = (dX2 + dY2);
+            harrisResponse[y*w+x] = (determinant / trace);
+        }
+    }
+
+    // Find the peaks in the Harris response, and store them
+    int numInterestsPtsTemp = 0;
+    for (int y = 0; y < h; y++)
+    {
+        for (int x = 0; x < w; x++)
+        {
+            // First, check if we need to expand our temp interest point array
+            if (numInterestsPts == numInterestsPtsTemp)
+            {
+                int newSize = numInterestsPtsTemp + 10;
+                CIntPt *temp = new CIntPt[newSize];
+                if (numInterestsPts > 0)
+                {
+                    for (int i = 0; i < numInterestsPtsTemp; i++)
+                    {
+                        temp[i].m_X = (*interestPts)[i].m_X;
+                        temp[i].m_Y = (*interestPts)[i].m_Y;
+                    }
+                    delete[] (*interestPts);
+                }
+                *interestPts = temp;
+                numInterestsPtsTemp = newSize;
+            }
+
+            // Peak response determination: if (x,y) is greater than its eight
+            // neighbors, it's a peak response!
+            bool fIsPeak = (harrisResponse[y*w+x] > thres);
+            for (int j = -1; j <= 1 && fIsPeak; j++)
+            {
+                for (int i = -1; i <= 1 && fIsPeak; i++)
+                {
+                    int cy = y + j;
+                    int cx = x + i;
+
+                    // If we're in bounds (and not ourself), check to make sure we're a max!
+                    if (0 <= cy && cy < h && 0 <= cx && cx < w && (cx != x || cy != y))
+                    {
+                        if (harrisResponse[y*w+x] <= harrisResponse[cy*w+cx])
+                        {
+                            fIsPeak = false;
+                        }
+                    }
+                }
+            }
+
+            // If we're a peak, add to our interest point array!
+            if (fIsPeak)
+            {
+                (*interestPts)[numInterestsPts].m_X = x;
+                (*interestPts)[numInterestsPts].m_Y = y;
+                numInterestsPts++;
+            }
+        }
+    }
+
+    // Now that we've found all the interest points we're going to find, shrink
+    // the array of interest points if needed
+    if (numInterestsPts != numInterestsPtsTemp)
+    {
+        CIntPt *temp = new CIntPt[numInterestsPts];
+        for (int i = 0; i < numInterestsPts; i++)
+        {
+            temp[i].m_X = (*interestPts)[i].m_X;
+            temp[i].m_Y = (*interestPts)[i].m_Y;
+        }
+        delete[] (*interestPts);
+        *interestPts = temp;
+    }
+
+    // All done!  Draw the interest points, or the raw Harris response if
+    // outputting for grading purposes
+    bool fShowRawHarris = false;
+    if (!fShowRawHarris)
+    {
+        DrawInterestPoints(*interestPts, numInterestsPts, imageDisplay);
+    }
+    else
+    {
+        // Find the maximum Harris response
+        double maxResponse = -1;
+        for (int y = 0; y < h; y++)
+        {
+            for (int x = 0; x < w; x++)
+            {
+                if (harrisResponse[y*w+x] > maxResponse)
+                {
+                    maxResponse = harrisResponse[y*w+x];
+                }
+            }
+        }
+
+        // Now output!
+        for (int y = 0; y < h; y++)
+        {
+            for (int x = 0; x < w; x++)
+            {
+                int val = static_cast<int>(floor((harrisResponse[y*w+x]/maxResponse)*255+0.5));
+                imageDisplay.setPixel(x, y, qRgb(val, val, val));
+            }
+        }
+    }
 
     delete [] buffer;
+    delete[] derivX;
+    delete[] derivY;
+    delete[] derivX2;
+    delete[] derivY2;
+    delete[] derivXY;
+    delete[] harrisResponse;
 }
 
 
