@@ -3,6 +3,7 @@
 #include "ui_mainwindow.h"
 #include <QtGui>
 #include "Matrix.h"
+#include "time.h"
 
 /*******************************************************************************
     The following are helper routines with code already written.
@@ -647,7 +648,12 @@ Project a point (x1, y1) using the homography transformation h
 *******************************************************************************/
 void MainWindow::Project(double x1, double y1, double &x2, double &y2, double h[3][3])
 {
-    // Add your code here.
+    double u = h[0][0]*x1 + h[0][1]*y1 + h[0][2]*1;
+    double v = h[1][0]*x1 + h[1][1]*y1 + h[1][2]*1;
+    double w = h[2][0]*x1 + h[2][1]*y1 + h[2][2]*1;
+
+    x2 = (u / w);
+    y2 = (v / w);
 }
 
 /*******************************************************************************
@@ -661,9 +667,22 @@ Count the number of inliers given a homography.  This is a helper function for R
 *******************************************************************************/
 int MainWindow::ComputeInlierCount(double h[3][3], CMatches *matches, int numMatches, double inlierThreshold)
 {
-    // Add your code here.
+    int numInliers = 0;
 
-    return 0;
+    for (int i = 0; i < numMatches; i++)
+    {
+        double x2Projected;
+        double y2Projected;
+        Project(matches[i].m_X1, matches[i].m_Y1, x2Projected, y2Projected, h);
+
+        double distance = sqrt(pow(matches[i].m_X2-x2Projected, 2) + pow(matches[i].m_Y2-y2Projected, 2));
+        if (distance < inlierThreshold)
+        {
+            numInliers++;
+        }
+    }
+
+    return numInliers;
 }
 
 
@@ -681,10 +700,85 @@ Compute homography transformation between images using RANSAC.
 void MainWindow::RANSAC(CMatches *matches, int numMatches, int numIterations, double inlierThreshold,
                         double hom[3][3], double homInv[3][3], QImage &image1Display, QImage &image2Display)
 {
-    // Add your code here.
+    srand(time(nullptr));
+
+    int numInliersBest = -1;
+    double homComputedBest[3][3];
+
+    // Over numIterations, try to determine the best homography
+    for (int i = 0; i < numIterations; i++)
+    {
+        // Randomly select four matches
+        int matchIndexes[4];
+        for (int j = 0; j < 4; j++)
+        {
+            bool fUnique;
+            do
+            {
+                matchIndexes[j] = (rand() % numMatches);
+
+                // Check to make sure we haven't already selected this match
+                fUnique = true;
+                for (int k = 0; k < j; k++)
+                {
+                    if (matchIndexes[j] == matchIndexes[k])
+                    {
+                        fUnique = false;
+                    }
+                }
+            } while (!fUnique);
+        }
+
+        // Using our four matches, compute the homography
+        CMatches tempMatches[4];
+        tempMatches[0] = matches[matchIndexes[0]];
+        tempMatches[1] = matches[matchIndexes[1]];
+        tempMatches[2] = matches[matchIndexes[2]];
+        tempMatches[3] = matches[matchIndexes[3]];
+        double homComputed[3][3];
+        ComputeHomography(tempMatches, 4, homComputed, true);
+
+        // Compute inlier count on the new homography
+        int numInliers = ComputeInlierCount(homComputed, matches, numMatches, inlierThreshold);
+
+        // Save homography if it has our highest number of inliers
+        if (numInliers > numInliersBest)
+        {
+            numInliersBest = numInliers;
+            homComputedBest[0][0] = homComputed[0][0];
+            homComputedBest[0][1] = homComputed[0][1];
+            homComputedBest[0][2] = homComputed[0][2];
+            homComputedBest[1][0] = homComputed[1][0];
+            homComputedBest[1][1] = homComputed[1][1];
+            homComputedBest[1][2] = homComputed[1][2];
+            homComputedBest[2][0] = homComputed[2][0];
+            homComputedBest[2][1] = homComputed[2][1];
+            homComputedBest[2][2] = homComputed[2][2];
+        }
+    }
+
+    // Now that we've found a good homography to use, try to optimize it further
+    // by taking the matches that are inliers and compute the homography using
+    // all of them
+    CMatches *inliers = new CMatches[numInliersBest];
+    int numInliers = 0;
+    for (int i = 0; i < numMatches; i++)
+    {
+        double x2Projected;
+        double y2Projected;
+        Project(matches[i].m_X1, matches[i].m_Y1, x2Projected, y2Projected, homComputedBest);
+        double distance = sqrt(pow(matches[i].m_X2-x2Projected, 2) + pow(matches[i].m_Y2-y2Projected, 2));
+        if (distance < inlierThreshold)
+        {
+            inliers[numInliers] = matches[i];
+            numInliers++;
+        }
+    }
+    ComputeHomography(inliers, numInliers, hom, true);
+    ComputeHomography(inliers, numInliers, homInv, false);
 
     // After you're done computing the inliers, display the corresponding matches.
-    //DrawMatches(inliers, numInliers, image1Display, image2Display);
+    DrawMatches(inliers, numInliers, image1Display, image2Display);
 
 }
 
