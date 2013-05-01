@@ -595,16 +595,12 @@ void MainWindow::MatchInterestPoints(QImage image1, CIntPt *interestPts1, int nu
             }
 
             // Now, compare the two descriptors to see if they are good matches
-            double distance = sqrt(
-                    pow(interestPts1[img1].m_Desc[0]-interestPts2[img2].m_Desc[0], 2) +
-                    pow(interestPts1[img1].m_Desc[1]-interestPts2[img2].m_Desc[1], 2) +
-                    pow(interestPts1[img1].m_Desc[2]-interestPts2[img2].m_Desc[2], 2) +
-                    pow(interestPts1[img1].m_Desc[3]-interestPts2[img2].m_Desc[3], 2) +
-                    pow(interestPts1[img1].m_Desc[4]-interestPts2[img2].m_Desc[4], 2) +
-                    pow(interestPts1[img1].m_Desc[5]-interestPts2[img2].m_Desc[5], 2) +
-                    pow(interestPts1[img1].m_Desc[6]-interestPts2[img2].m_Desc[6], 2) +
-                    pow(interestPts1[img1].m_Desc[7]-interestPts2[img2].m_Desc[7], 2)
-                );
+            double distance = 0;
+            for (int d = 0; d < DESC_SIZE; d++)
+            {
+                distance += pow(interestPts1[img1].m_Desc[d]-interestPts2[img2].m_Desc[d], 2);
+            }
+            distance = sqrt(distance);
             if (img2Closest == -1 || distance < img2ClosestDistance)
             {
                 img2Closest = img2;
