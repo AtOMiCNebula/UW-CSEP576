@@ -3,6 +3,7 @@
 #include "ui_mainwindow.h"
 #include <QtGui>
 #include "Matrix.h"
+#include "time.h"
 
 /*******************************************************************************
     The following are helper routines with code already written.
@@ -248,6 +249,54 @@ bool MainWindow::ComputeHomography(CMatches *matches, int numMatches, double h[3
 *******************************************************************************
 *******************************************************************************/
 
+void ConvolveHelper(double *image, int width, int height, double *kernel, int kernelWidth, int kernelHeight)
+{
+    int kernelHalfHeight = (kernelHeight / 2);
+    int kernelHalfWidth = (kernelWidth / 2);
+
+    // Create and initialize our buffer
+    int bufferHeight = (height + 2*kernelHalfHeight);
+    int bufferWidth = (width + 2*kernelHalfWidth);
+    double *buffer = new double[bufferWidth*bufferHeight];
+    for (int by = 0; by < bufferHeight; by++)
+    {
+        for (int bx = 0; bx < bufferWidth; bx++)
+        {
+            int iy = (by - kernelHalfHeight);
+            int ix = (bx - kernelHalfWidth);
+
+            buffer[by*bufferWidth+bx] =
+                    ((0 <= iy && iy < height && 0 <= ix && ix < width) ?
+                         image[iy*width+ix] : 0.0);
+        }
+    }
+
+    // Now, convolve the kernel over the image
+    for (int iy = 0; iy < height; iy++)
+    {
+        for (int ix = 0; ix < width; ix++)
+        {
+            double result = 0.0;
+            for (int ky = 0; ky < kernelHeight; ky++)
+            {
+                for (int kx = 0; kx < kernelWidth; kx++)
+                {
+                    double kernelWeight = kernel[ky*kernelWidth+kx];
+
+                    // Translate to coordinates in buffer space
+                    int by = iy + ky;
+                    int bx = ix + kx;
+                    result += kernelWeight*buffer[by*bufferWidth+bx];
+                }
+            }
+
+            image[iy*width+ix] = result;
+        }
+    }
+
+    // Clean up!
+    delete[] buffer;
+}
 
 /*******************************************************************************
 Blur a single channel floating point image with a Gaussian.
@@ -260,10 +309,29 @@ Blur a single channel floating point image with a Gaussian.
 *******************************************************************************/
 void MainWindow::SeparableGaussianBlurImage(double *image, int w, int h, double sigma)
 {
-    // Add your code here
+    if (sigma <= 0)
+    {
+        return;
+    }
 
-    // To access the pixel (c,r), use image[r*width + c].
+    // Calculate the kernel (some extra computation/storage, should be fine...)
+    double twoSigSq = 2.0 * pow(sigma, 2);
+    double sigSqRt = sigma * sqrt(2*M_PI);
+    int kernelHalfSide = static_cast<int>(ceil(3 * sigma));
+    int kernelSize = ((2 * kernelHalfSide) + 1);
+    double *kernel = new double[kernelSize];
+    for (int i = 0; i < kernelSize; i++)
+    {
+        int y = (i - kernelHalfSide);
+        kernel[i] = (1.0 / (sigSqRt)) * pow(M_E, -1*(pow(y,2.0))/twoSigSq);
+    }
 
+    // Generate the updated image
+    ConvolveHelper(image, w, h, kernel, kernelSize, 1);
+    ConvolveHelper(image, w, h, kernel, 1, kernelSize);
+
+    // Clean up!
+    delete[] kernel;
 }
 
 
@@ -295,20 +363,171 @@ void MainWindow::HarrisCornerDetector(QImage image, double sigma, double thres, 
             buffer[r*w + c] = (double) qGreen(pixel);
         }
 
-    // Write your Harris corner detection code here.
+    // Compute the x and y derivatives on the image
+    double *derivX = new double[w*h];
+    double *derivY = new double[w*h];
+    for (int y = 0; y < h; y++)
+    {
+        for (int x = 0; x < w; x++)
+        {
+            derivX[y*w+x] = derivY[y*w+x] = buffer[y*w+x];
+        }
+    }
+    double derivKernel[] = { -1, 0, 1 };
+    ConvolveHelper(derivX, w, h, derivKernel, 1, 3);
+    ConvolveHelper(derivY, w, h, derivKernel, 3, 1);
 
-    // Once you uknow the number of interest points allocate an array as follows:
-    // *interestPts = new CIntPt [numInterestsPts];
-    // Access the values using: (*interestPts)[i].m_X = 5.0;
-    //
-    // The position of the interest point is (m_X, m_Y)
-    // The descriptor of the interest point is stored in m_Desc
-    // The length of the descriptor is m_DescSize, if m_DescSize = 0, then it is not valid.
+    // Compute derivX2, derivY2, and derivXY, then apply gaussian blur
+    double *derivX2 = new double[w*h];
+    double *derivY2 = new double[w*h];
+    double *derivXY = new double[w*h];
+    for (int y = 0; y < h; y++)
+    {
+        for (int x = 0; x < w; x++)
+        {
+            double dX = derivX[y*w+x];
+            double dY = derivY[y*w+x];
 
-    // Once you are done finding the interest points, display them on the image
-    DrawInterestPoints(*interestPts, numInterestsPts, imageDisplay);
+            derivX2[y*w+x] = pow(dX, 2);
+            derivY2[y*w+x] = pow(dY, 2);
+            derivXY[y*w+x] = (dX * dY);
+        }
+    }
+    SeparableGaussianBlurImage(derivX2, w, h, sigma);
+    SeparableGaussianBlurImage(derivY2, w, h, sigma);
+    SeparableGaussianBlurImage(derivXY, w, h, sigma);
+
+    // Compute the Harris response
+    double *harrisResponse = new double[w*h];
+    for (int y = 0; y < h; y++)
+    {
+        for (int x = 0; x < w; x++)
+        {
+            double dX2 = derivX2[y*w+x];
+            double dY2 = derivY2[y*w+x];
+            double dXY = derivXY[y*w+x];
+
+            // I'm just performing the math directly without constructing
+            // the covariance matrix, H.  It would look like this:
+            // [  dX2  dXY
+            //    dXY  dY2  ]
+
+            // Harris response: R = determinant(H) / trace(H)
+            double determinant = (dX2 * dY2) - (dXY * dXY);
+            double trace = (dX2 + dY2);
+            harrisResponse[y*w+x] = (determinant / trace);
+        }
+    }
+
+    // Find the peaks in the Harris response, and store them
+    int numInterestsPtsTemp = 0;
+    for (int y = 0; y < h; y++)
+    {
+        for (int x = 0; x < w; x++)
+        {
+            // First, check if we need to expand our temp interest point array
+            if (numInterestsPts == numInterestsPtsTemp)
+            {
+                int newSize = numInterestsPtsTemp + 10;
+                CIntPt *temp = new CIntPt[newSize];
+                if (numInterestsPts > 0)
+                {
+                    for (int i = 0; i < numInterestsPtsTemp; i++)
+                    {
+                        temp[i].m_X = (*interestPts)[i].m_X;
+                        temp[i].m_Y = (*interestPts)[i].m_Y;
+                    }
+                    delete[] (*interestPts);
+                }
+                *interestPts = temp;
+                numInterestsPtsTemp = newSize;
+            }
+
+            // Peak response determination: if (x,y) is greater than its eight
+            // neighbors, it's a peak response!
+            bool fIsPeak = (harrisResponse[y*w+x] > thres);
+            for (int j = -1; j <= 1 && fIsPeak; j++)
+            {
+                for (int i = -1; i <= 1 && fIsPeak; i++)
+                {
+                    int cy = y + j;
+                    int cx = x + i;
+
+                    // If we're in bounds (and not ourself), check to make sure we're a max!
+                    if (0 <= cy && cy < h && 0 <= cx && cx < w && (cx != x || cy != y))
+                    {
+                        if (harrisResponse[y*w+x] <= harrisResponse[cy*w+cx])
+                        {
+                            fIsPeak = false;
+                        }
+                    }
+                }
+            }
+
+            // If we're a peak, add to our interest point array!
+            if (fIsPeak)
+            {
+                (*interestPts)[numInterestsPts].m_X = x;
+                (*interestPts)[numInterestsPts].m_Y = y;
+                numInterestsPts++;
+            }
+        }
+    }
+
+    // Now that we've found all the interest points we're going to find, shrink
+    // the array of interest points if needed
+    if (numInterestsPts != numInterestsPtsTemp)
+    {
+        CIntPt *temp = new CIntPt[numInterestsPts];
+        for (int i = 0; i < numInterestsPts; i++)
+        {
+            temp[i].m_X = (*interestPts)[i].m_X;
+            temp[i].m_Y = (*interestPts)[i].m_Y;
+        }
+        delete[] (*interestPts);
+        *interestPts = temp;
+    }
+
+    // All done!  Draw the interest points, or the raw Harris response if
+    // outputting for grading purposes
+    bool fShowRawHarris = false;
+    if (!fShowRawHarris)
+    {
+        DrawInterestPoints(*interestPts, numInterestsPts, imageDisplay);
+    }
+    else
+    {
+        // Find the maximum Harris response
+        double maxResponse = -1;
+        for (int y = 0; y < h; y++)
+        {
+            for (int x = 0; x < w; x++)
+            {
+                if (harrisResponse[y*w+x] > maxResponse)
+                {
+                    maxResponse = harrisResponse[y*w+x];
+                }
+            }
+        }
+
+        // Now output!
+        for (int y = 0; y < h; y++)
+        {
+            for (int x = 0; x < w; x++)
+            {
+                int val = static_cast<int>(floor((harrisResponse[y*w+x]/maxResponse)*255+0.5));
+                imageDisplay.setPixel(x, y, qRgb(val, val, val));
+            }
+        }
+    }
 
     delete [] buffer;
+    delete[] derivX;
+    delete[] derivY;
+    delete[] derivX2;
+    delete[] derivY2;
+    delete[] derivXY;
+    delete[] harrisResponse;
 }
 
 
@@ -337,13 +556,81 @@ void MainWindow::MatchInterestPoints(QImage image1, CIntPt *interestPts1, int nu
     ComputeDescriptors(image1, interestPts1, numInterestsPts1);
     ComputeDescriptors(image2, interestPts2, numInterestsPts2);
 
-    // Add your code here for finding the best matches for each point.
+    // Find the best matches!
+    int numMatchesTemp = 0;
+    for (int img1 = 0; img1 < numInterestsPts1; img1++)
+    {
+        // Make sure this interest point has a valid descriptor
+        if (interestPts1[img1].m_DescSize == 0)
+        {
+            continue;
+        }
 
-    // Once you uknow the number of matches allocate an array as follows:
-    // *matches = new CMatches [numMatches];
-    //
-    // The position of the interest point in iamge 1 is (m_X1, m_Y1)
-    // The position of the interest point in image 2 is (m_X2, m_Y2)
+        // Next, check if we need to expand our matches array
+        if (numMatches == numMatchesTemp)
+        {
+            int newSize = numMatchesTemp + 10;
+            CMatches *temp = new CMatches[newSize];
+            if (numMatches > 0)
+            {
+                for (int i = 0; i < numMatchesTemp; i++)
+                {
+                    temp[i] = (*matches)[i];
+                }
+                delete[] (*matches);
+            }
+            *matches = temp;
+            numMatchesTemp = newSize;
+        }
+
+        int img2Closest = -1;
+        double img2ClosestDistance = 0;
+
+        for (int img2 = 0; img2 < numInterestsPts2; img2++)
+        {
+            // Make sure this interest point has a valid descriptor
+            if (interestPts2[img2].m_DescSize == 0)
+            {
+                continue;
+            }
+
+            // Now, compare the two descriptors to see if they are good matches
+            double distance = 0;
+            for (int d = 0; d < DESC_SIZE; d++)
+            {
+                distance += pow(interestPts1[img1].m_Desc[d]-interestPts2[img2].m_Desc[d], 2);
+            }
+            distance = sqrt(distance);
+            if (img2Closest == -1 || distance < img2ClosestDistance)
+            {
+                img2Closest = img2;
+                img2ClosestDistance = distance;
+            }
+        }
+
+        // If we found a good match, add it to the array!
+        if (img2Closest != -1)
+        {
+            (*matches)[numMatches].m_X1 = interestPts1[img1].m_X;
+            (*matches)[numMatches].m_Y1 = interestPts1[img1].m_Y;
+            (*matches)[numMatches].m_X2 = interestPts2[img2Closest].m_X;
+            (*matches)[numMatches].m_Y2 = interestPts2[img2Closest].m_Y;
+            numMatches++;
+        }
+    }
+
+    // Now that we've found all the matches we're going to find, shrink the
+    // array of matches if needed
+    if (numMatches != numMatchesTemp)
+    {
+        CMatches *temp = new CMatches[numMatches];
+        for (int i = 0; i < numMatches; i++)
+        {
+            temp[i] = (*matches)[i];
+        }
+        delete[] (*matches);
+        *matches = temp;
+    }
 
     // Draw the matches
     DrawMatches(*matches, numMatches, image1Display, image2Display);
@@ -357,7 +644,12 @@ Project a point (x1, y1) using the homography transformation h
 *******************************************************************************/
 void MainWindow::Project(double x1, double y1, double &x2, double &y2, double h[3][3])
 {
-    // Add your code here.
+    double u = h[0][0]*x1 + h[0][1]*y1 + h[0][2]*1;
+    double v = h[1][0]*x1 + h[1][1]*y1 + h[1][2]*1;
+    double w = h[2][0]*x1 + h[2][1]*y1 + h[2][2]*1;
+
+    x2 = (u / w);
+    y2 = (v / w);
 }
 
 /*******************************************************************************
@@ -371,9 +663,22 @@ Count the number of inliers given a homography.  This is a helper function for R
 *******************************************************************************/
 int MainWindow::ComputeInlierCount(double h[3][3], CMatches *matches, int numMatches, double inlierThreshold)
 {
-    // Add your code here.
+    int numInliers = 0;
 
-    return 0;
+    for (int i = 0; i < numMatches; i++)
+    {
+        double x2Projected;
+        double y2Projected;
+        Project(matches[i].m_X1, matches[i].m_Y1, x2Projected, y2Projected, h);
+
+        double distance = sqrt(pow(matches[i].m_X2-x2Projected, 2) + pow(matches[i].m_Y2-y2Projected, 2));
+        if (distance < inlierThreshold)
+        {
+            numInliers++;
+        }
+    }
+
+    return numInliers;
 }
 
 
@@ -391,10 +696,85 @@ Compute homography transformation between images using RANSAC.
 void MainWindow::RANSAC(CMatches *matches, int numMatches, int numIterations, double inlierThreshold,
                         double hom[3][3], double homInv[3][3], QImage &image1Display, QImage &image2Display)
 {
-    // Add your code here.
+    srand(time(nullptr));
+
+    int numInliersBest = -1;
+    double homComputedBest[3][3];
+
+    // Over numIterations, try to determine the best homography
+    for (int i = 0; i < numIterations; i++)
+    {
+        // Randomly select four matches
+        int matchIndexes[4];
+        for (int j = 0; j < 4; j++)
+        {
+            bool fUnique;
+            do
+            {
+                matchIndexes[j] = (rand() % numMatches);
+
+                // Check to make sure we haven't already selected this match
+                fUnique = true;
+                for (int k = 0; k < j; k++)
+                {
+                    if (matchIndexes[j] == matchIndexes[k])
+                    {
+                        fUnique = false;
+                    }
+                }
+            } while (!fUnique);
+        }
+
+        // Using our four matches, compute the homography
+        CMatches tempMatches[4];
+        tempMatches[0] = matches[matchIndexes[0]];
+        tempMatches[1] = matches[matchIndexes[1]];
+        tempMatches[2] = matches[matchIndexes[2]];
+        tempMatches[3] = matches[matchIndexes[3]];
+        double homComputed[3][3];
+        ComputeHomography(tempMatches, 4, homComputed, true);
+
+        // Compute inlier count on the new homography
+        int numInliers = ComputeInlierCount(homComputed, matches, numMatches, inlierThreshold);
+
+        // Save homography if it has our highest number of inliers
+        if (numInliers > numInliersBest)
+        {
+            numInliersBest = numInliers;
+            homComputedBest[0][0] = homComputed[0][0];
+            homComputedBest[0][1] = homComputed[0][1];
+            homComputedBest[0][2] = homComputed[0][2];
+            homComputedBest[1][0] = homComputed[1][0];
+            homComputedBest[1][1] = homComputed[1][1];
+            homComputedBest[1][2] = homComputed[1][2];
+            homComputedBest[2][0] = homComputed[2][0];
+            homComputedBest[2][1] = homComputed[2][1];
+            homComputedBest[2][2] = homComputed[2][2];
+        }
+    }
+
+    // Now that we've found a good homography to use, try to optimize it further
+    // by taking the matches that are inliers and compute the homography using
+    // all of them
+    CMatches *inliers = new CMatches[numInliersBest];
+    int numInliers = 0;
+    for (int i = 0; i < numMatches; i++)
+    {
+        double x2Projected;
+        double y2Projected;
+        Project(matches[i].m_X1, matches[i].m_Y1, x2Projected, y2Projected, homComputedBest);
+        double distance = sqrt(pow(matches[i].m_X2-x2Projected, 2) + pow(matches[i].m_Y2-y2Projected, 2));
+        if (distance < inlierThreshold)
+        {
+            inliers[numInliers] = matches[i];
+            numInliers++;
+        }
+    }
+    ComputeHomography(inliers, numInliers, hom, true);
+    ComputeHomography(inliers, numInliers, homInv, false);
 
     // After you're done computing the inliers, display the corresponding matches.
-    //DrawMatches(inliers, numInliers, image1Display, image2Display);
+    DrawMatches(inliers, numInliers, image1Display, image2Display);
 
 }
 
@@ -408,8 +788,33 @@ Bilinearly interpolate image (helper function for Stitch)
 *******************************************************************************/
 bool MainWindow::BilinearInterpolation(QImage *image, double x, double y, double rgb[3])
 {
-    // Add your code here.
+    int height = image->height();
+    int width = image->width();
+    int x1 = static_cast<int>(floor(x));
+    int y1 = static_cast<int>(floor(y));
+    int x2 = static_cast<int>(ceil(x+0.00001));
+    int y2 = static_cast<int>(ceil(y+0.00001));
 
+    QRgb pixel11 = ((0 <= x1 && x1 < width && 0 <= y1 && y1 < height) ?
+                        image->pixel(x1, y1) : qRgb(0, 0, 0));
+    QRgb pixel12 = ((0 <= x1 && x1 < width && 0 <= y2 && y2 < height) ?
+                        image->pixel(x1, y2) : qRgb(0, 0, 0));
+    QRgb pixel21 = ((0 <= x2 && x2 < width && 0 <= y1 && y1 < height) ?
+                        image->pixel(x2, y1) : qRgb(0, 0, 0));
+    QRgb pixel22 = ((0 <= x2 && x2 < width && 0 <= y2 && y2 < height) ?
+                        image->pixel(x2, y2) : qRgb(0, 0, 0));
+
+    for (int i = 0; i < 3; i++)
+    {
+        int (*colorfn)(QRgb) = (i == 0 ? qRed : (i == 1 ? qGreen : qBlue));
+        rgb[i] = (1 / ((x2-x1)*(y2-y1))) *
+                (((*colorfn)(pixel11)*(x2-x)*(y2-y)) +
+                 ((*colorfn)(pixel21)*(x-x1)*(y2-y)) +
+                 ((*colorfn)(pixel12)*(x2-x)*(y-y1)) +
+                 ((*colorfn)(pixel22)*(x-x1)*(y-y1)));
+    }
+
+    // What is this for?
     return true;
 }
 
@@ -428,11 +833,68 @@ void MainWindow::Stitch(QImage image1, QImage image2, double hom[3][3], double h
     int ws = 0;
     int hs = 0;
 
-    // Add your code to compute ws and hs here.
+    int w1 = image1.width();
+    int h1 = image1.height();
+    int w2 = image2.width();
+    int h2 = image2.height();
+
+    // Project four corners of image2 into image1's coordinate system
+    double cornerX_NW;
+    double cornerY_NW;
+    Project(0, 0, cornerX_NW, cornerY_NW, homInv);
+    double cornerX_NE;
+    double cornerY_NE;
+    Project(w2-1, 0, cornerX_NE, cornerY_NE, homInv);
+    double cornerX_SE;
+    double cornerY_SE;
+    Project(w2-1, h2-1, cornerX_SE, cornerY_SE, homInv);
+    double cornerX_SW;
+    double cornerY_SW;
+    Project(0, h2-1, cornerX_SW, cornerY_SW, homInv);
+
+    // Calculate the width and height of stitchedImage using projected corners
+    double minWidth = min(min(cornerX_NW, cornerX_NE), min(cornerX_SE, cornerX_SW));
+    double minHeight = min(min(cornerY_NW, cornerY_NE), min(cornerY_SE, cornerY_SW));
+    double maxWidth = max(max(cornerX_NW, cornerX_NE), max(cornerX_SE, cornerX_SW));
+    double maxHeight = max(max(cornerY_NW, cornerY_NE), max(cornerY_SE, cornerY_SW));
+    int stitchedXOffset = abs(min(0, static_cast<int>(floor(minWidth))));
+    int stitchedYOffset = abs(min(0, static_cast<int>(floor(minHeight))));
+    ws = stitchedXOffset + max(w1, static_cast<int>(ceil(maxWidth)));
+    hs = stitchedYOffset + max(h1, static_cast<int>(ceil(maxHeight)));
 
     stitchedImage = QImage(ws, hs, QImage::Format_RGB32);
     stitchedImage.fill(qRgb(0,0,0));
 
-    // Add you code to warp image1 and image2 to stitchedImage here.
+    // Copy image1 into stitchedImage
+    for (int y = 0; y < h1; y++)
+    {
+        for (int x = 0; x < w1; x++)
+        {
+            stitchedImage.setPixel(stitchedXOffset+x, stitchedYOffset+y, image1.pixel(x, y));
+        }
+    }
+
+    // Warp image2 onto the stitched image by projecting the stitched image
+    // coordinates into image2's coordinate system, and bilinearly interpolating
+    // to get the pixel value
+    for (int y = 0; y < hs; y++)
+    {
+        for (int x = 0; x < ws; x++)
+        {
+            double x2Projected;
+            double y2Projected;
+            Project(x-stitchedXOffset, y-stitchedYOffset, x2Projected, y2Projected, hom);
+
+            if (0 <= x2Projected && x2Projected < w2 && 0 <= y2Projected && y2Projected < h2)
+            {
+                double rgb[3];
+                BilinearInterpolation(&image2, x2Projected, y2Projected, rgb);
+
+                stitchedImage.setPixel(x, y, qRgb(static_cast<int>(floor(rgb[0]+0.5)),
+                                                  static_cast<int>(floor(rgb[1]+0.5)),
+                                                  static_cast<int>(floor(rgb[2]+0.5))));
+            }
+        }
+    }
 }
 
