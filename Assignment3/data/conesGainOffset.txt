@@ -1,0 +1,6 @@
+conesGainOffset/im2go.png
+conesGainOffset/im6.png
+cones/disp2.png
+0
+60
+4

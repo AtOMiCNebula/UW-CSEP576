@@ -1,0 +1,6 @@
+teddy/im2.png
+teddy/im6.png
+teddy/disp2.png
+0
+60
+4

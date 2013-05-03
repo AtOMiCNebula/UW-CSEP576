@@ -1,0 +1,6 @@
+Garfield/right.png
+Garfield/left.png
+none
+0
+30
+4

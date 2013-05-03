@@ -1,0 +1,6 @@
+SouthSister/left.png
+SouthSister/right.png
+none
+10
+50
+4

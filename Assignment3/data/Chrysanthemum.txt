@@ -1,0 +1,6 @@
+Chrysanthemum/left.png
+Chrysanthemum/right.png
+none
+-30
+30
+4

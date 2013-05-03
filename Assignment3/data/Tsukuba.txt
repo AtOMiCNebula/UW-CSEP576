@@ -1,0 +1,6 @@
+Tsukuba/left.bmp
+Tsukuba/right.bmp
+Tsukuba/correctDisparity.bmp
+0
+16
+16
