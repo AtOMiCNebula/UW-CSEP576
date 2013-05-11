@@ -21,7 +21,7 @@ MainWindow::MainWindow(QWidget *parent) :
     connect(ui->segmentButton, SIGNAL(clicked()), this, SLOT(Segment()));
     connect(ui->renderButton, SIGNAL(clicked()), this, SLOT(Render()));
     connect(ui->renderSlider, SIGNAL(valueChanged(int)), this, SLOT(RenderSlider(int)));
-    connect(ui->magicButton, SIGNAL(clicked()), this, SLOT(MagicStereo(int)));
+    connect(ui->magicButton, SIGNAL(clicked()), this, SLOT(MagicStereo()));
 
     ui->GTCheckBox->setChecked(true);
     ui->pixelErrorLabel->setText("");
