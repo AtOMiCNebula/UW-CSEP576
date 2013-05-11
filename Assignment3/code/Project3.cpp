@@ -371,8 +371,33 @@ void MainWindow::SSD(QImage image1, QImage image2, int minDisparity, int maxDisp
 {
     int w = image1.width();
     int h = image1.height();
+    int numDisparities = (maxDisparity - minDisparity); // falls short by one, but this is how the harness determines it
 
-    // Add your code here
+    for (int y = 0; y < h; y++)
+    {
+        for (int x = 0; x < w; x++)
+        {
+            QRgb pixelLeft = image1.pixel(x, y);
+
+            for (int d = 0; d < numDisparities; d++)
+            {
+                int xd = (x - (minDisparity + d));
+                QRgb pixelRight;
+                if (0 <= xd && xd < w)
+                {
+                    pixelRight = image2.pixel(xd, y);
+                }
+                else
+                {
+                    pixelRight = qRgb(0, 0, 0);
+                }
+
+                matchCost[d*w*h + y*w + x] = (pow(0.3*(qRed(pixelLeft) - qRed(pixelRight)), 2) +
+                                              pow(0.6*(qGreen(pixelLeft) - qGreen(pixelRight)), 2) +
+                                              pow(0.1*(qBlue(pixelLeft) - qBlue(pixelRight)), 2));
+            }
+        }
+    }
 }
 
 /*******************************************************************************
@@ -390,9 +415,33 @@ void MainWindow::SAD(QImage image1, QImage image2, int minDisparity, int maxDisp
 {
    int w = image1.width();
    int h = image1.height();
+    int numDisparities = (maxDisparity - minDisparity); // falls short by one, but this is how the harness determines it
 
-   // Add your code here
+    for (int y = 0; y < h; y++)
+    {
+       for (int x = 0; x < w; x++)
+       {
+           QRgb pixelLeft = image1.pixel(x, y);
 
+           for (int d = 0; d < numDisparities; d++)
+           {
+               int xd = (x - (minDisparity + d));
+               QRgb pixelRight;
+               if (0 <= xd && xd < w)
+               {
+                   pixelRight = image2.pixel(xd, y);
+               }
+               else
+               {
+                   pixelRight = qRgb(0, 0, 0);
+               }
+
+               matchCost[d*w*h + y*w + x] = abs(0.3*(qRed(pixelLeft) - qRed(pixelRight))) +
+                                            abs(0.6*(qGreen(pixelLeft) - qGreen(pixelRight))) +
+                                            abs(0.1*(qBlue(pixelLeft) - qBlue(pixelRight)));
+           }
+       }
+    }
 }
 
 /*******************************************************************************
@@ -513,7 +562,25 @@ For each pixel find the disparity with minimum match cost
 *******************************************************************************/
 void MainWindow::FindBestDisparity(double *matchCost, double *disparities, int w, int h, int minDisparity, int numDisparities)
 {
-    // Add your code here
+    for (int y = 0; y < h; y++)
+    {
+        for (int x = 0; x < w; x++)
+        {
+            int bestDisparity = -1;
+            double bestDisparityError = 0.0;
+
+            for (int d = 0; d < numDisparities; d++)
+            {
+                if (bestDisparity == -1 || matchCost[d*w*h + y*w + x] < bestDisparityError)
+                {
+                    bestDisparity = d;
+                    bestDisparityError = matchCost[d*w*h + y*w + x];
+                }
+            }
+
+            disparities[y*w+x] = (minDisparity + bestDisparity);
+        }
+    }
 }
 
 /*******************************************************************************
