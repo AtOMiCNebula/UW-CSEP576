@@ -419,28 +419,28 @@ void MainWindow::SAD(QImage image1, QImage image2, int minDisparity, int maxDisp
 
     for (int y = 0; y < h; y++)
     {
-       for (int x = 0; x < w; x++)
-       {
-           QRgb pixelLeft = image1.pixel(x, y);
+        for (int x = 0; x < w; x++)
+        {
+            QRgb pixelLeft = image1.pixel(x, y);
 
-           for (int d = 0; d < numDisparities; d++)
-           {
-               int xd = (x - (minDisparity + d));
-               QRgb pixelRight;
-               if (0 <= xd && xd < w)
-               {
-                   pixelRight = image2.pixel(xd, y);
-               }
-               else
-               {
-                   pixelRight = qRgb(0, 0, 0);
-               }
+            for (int d = 0; d < numDisparities; d++)
+            {
+                int xd = (x - (minDisparity + d));
+                QRgb pixelRight;
+                if (0 <= xd && xd < w)
+                {
+                    pixelRight = image2.pixel(xd, y);
+                }
+                else
+                {
+                    pixelRight = qRgb(0, 0, 0);
+                }
 
-               matchCost[d*w*h + y*w + x] = abs(0.3*(qRed(pixelLeft) - qRed(pixelRight))) +
-                                            abs(0.6*(qGreen(pixelLeft) - qGreen(pixelRight))) +
-                                            abs(0.1*(qBlue(pixelLeft) - qBlue(pixelRight)));
-           }
-       }
+                matchCost[d*w*h + y*w + x] = abs(0.3*(qRed(pixelLeft) - qRed(pixelRight))) +
+                                             abs(0.6*(qGreen(pixelLeft) - qGreen(pixelRight))) +
+                                             abs(0.1*(qBlue(pixelLeft) - qBlue(pixelRight)));
+            }
+        }
     }
 }
 
