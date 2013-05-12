@@ -703,7 +703,47 @@ Compute the mean color and position for each segment (helper function for Segmen
 *******************************************************************************/
 void MainWindow::ComputeSegmentMeans(QImage image, int *segment, int numSegments, double (*meanSpatial)[2], double (*meanColor)[3])
 {
-    // Add your code here
+    // Create an array to hold the number of pixels in each segment, so that we
+    // can accurately calculate the average later
+    int *segmentPixels = new int[numSegments];
+
+    // Initialize our storage variables
+    for (int i = 0; i < numSegments; i++)
+    {
+        meanSpatial[i][0] = meanSpatial[i][1] = 0;
+        meanColor[i][0] = meanColor[i][1] = meanColor[i][2] = 0;
+        segmentPixels[i] = 0;
+    }
+
+    // Calculate the sums!
+    int h = image.height();
+    int w = image.width();
+    for (int y = 0; y < h; y++)
+    {
+        for (int x = 0; x < w; x++)
+        {
+            QRgb pixel = image.pixel(x, y);
+            int s = segment[y*w + x];
+
+            meanSpatial[s][0] += x;
+            meanSpatial[s][1] += y;
+            meanColor[s][0] += qRed(pixel);
+            meanColor[s][1] += qGreen(pixel);
+            meanColor[s][2] += qBlue(pixel);
+            segmentPixels[s]++;
+        }
+    }
+
+    // Update our outputs to be means, instead of sums
+    for (int i = 0; i < numSegments; i++)
+    {
+        int numPixels = segmentPixels[i];
+        meanSpatial[i][0] /= numPixels;
+        meanSpatial[i][1] /= numPixels;
+        meanColor[i][0] /= numPixels;
+        meanColor[i][1] /= numPixels;
+        meanColor[i][2] /= numPixels;
+    }
 }
 
 /*******************************************************************************
