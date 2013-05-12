@@ -460,9 +460,50 @@ void MainWindow::NCC(QImage image1, QImage image2, int minDisparity, int maxDisp
 {
    int w = image1.width();
    int h = image1.height();
+    int numDisparities = (maxDisparity - minDisparity); // falls short by one, but this is how the harness determines it
 
-   // Add your code here
+    for (int y = 0; y < h; y++)
+    {
+        for (int x = 0; x < w; x++)
+        {
+            for (int d = 0; d < numDisparities; d++)
+            {
+                int D = (minDisparity+d);
 
+                double sumDiff_img1img2 = 0.0;
+                double sumDiffSq_img1 = 0.0;
+                double sumDiffSq_img2 = 0.0;
+                for (int ry = -radius; ry <= radius; ry++)
+                {
+                    int Y = y+ry;
+                    if (!(0 <= Y && Y < h))
+                    {
+                        continue;
+                    }
+
+                    for (int rx = -radius; rx <= radius; rx++)
+                    {
+                        int X = x+rx;
+                        int XD = X-D;
+                        if (!(0 <= X && X < w) || !(0 <= XD && XD < w))
+                        {
+                            continue;
+                        }
+
+                        QRgb pixel1 = image1.pixel(X, Y);
+                        QRgb pixel2 = image2.pixel(XD, Y);
+                        double intensity1 = (0.3*qRed(pixel1) + 0.6*qGreen(pixel1) + 0.1*qBlue(pixel1));
+                        double intensity2 = (0.3*qRed(pixel2) + 0.6*qGreen(pixel2) + 0.1*qBlue(pixel2));
+                        sumDiff_img1img2 += (intensity1 * intensity2);
+                        sumDiffSq_img1 += pow(intensity1, 2);
+                        sumDiffSq_img2 += pow(intensity2, 2);
+                    }
+                }
+
+                matchCost[d*w*h + y*w + x] = (1 - (sumDiff_img1img2 / sqrt(sumDiffSq_img1*sumDiffSq_img2)));
+            }
+        }
+    }
 }
 
 /*******************************************************************************
