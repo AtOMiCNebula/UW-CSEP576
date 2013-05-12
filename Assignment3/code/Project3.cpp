@@ -622,17 +622,31 @@ Bilaterally blur the match score using the colorImage to compute kernel weights
 void MainWindow::BilateralBlurMatchScore(double *matchCost, int w, int h, int numDisparities,
                                          double sigmaS, double sigmaI, QImage colorImage)
 {
+    if (sigmaS <= 0)
+    {
+        return;
+    }
+
+    // Compute our Gaussian kernel (we only need to compute it once)
+    double twoSigSq = 2.0 * pow(sigmaS, 2);
+    double sigSqRt = sigmaS * sqrt(2*M_PI);
+    int kernelHalfSide = static_cast<int>(ceil(3 * sigmaS));
+    int kernelSize = ((2 * kernelHalfSide) + 1);
+    double *kernel = new double[kernelSize];
+    for (int i = 0; i < kernelSize; i++)
+    {
+        int y = (i - kernelHalfSide);
+        kernel[i] = (1.0 / (sigSqRt)) * pow(M_E, -1*(pow(y,2.0))/twoSigSq);
+    }
+
+    // Allocate some space for our buffer (we'll fill it for each disparity)
+    double *buffer = new double[w*h];
+
     for (int d = 0; d < numDisparities; d++)
     {
         double *matchCostPart = (matchCost + d*w*h);
 
-        int r, c, rd, cd, i;
-        QRgb pixel;
-        int radius = max(1, (int) (sigmaS*3.0));
-        int size = 2*radius + 1;
-        double *buffer;
-
-        buffer = new double[w*h];
+        // Fill our buffer space with the disparity we'll be looking at
         for (int y = 0; y < h; y++)
         {
             for (int x = 0; x < w; x++)
@@ -641,62 +655,42 @@ void MainWindow::BilateralBlurMatchScore(double *matchCost, int w, int h, int nu
             }
         }
 
-        if(sigmaS == 0.0)
-            return;
-
-        double *kernel = new double [size];
-
-        for(i=0;i<size;i++)
+        // Compute the Gaussian (with the intensities for Bilateral)
+        for (int iy = 0; iy < h; iy++)
         {
-            double dist = (double) (i - radius);
-
-            kernel[i] = exp(-(dist*dist)/(2.0*sigmaS*sigmaS));
-        }
-
-        double denom = 0.000001;
-
-        for(i=0;i<size;i++)
-            denom += kernel[i];
-        for(i=0;i<size;i++)
-            kernel[i] /= denom;
-
-        for(r=0;r<h;r++)
-        {
-            for(c=0;c<w;c++)
+            for (int ix = 0; ix < w; ix++)
             {
-
-                double cost;
-
-                cost = 0.0;
+                double cost = 0.0;
                 double denom = 0.0;
-                pixel = colorImage.pixel(c, r);
 
-                double inten0 = (double) (qRed(pixel) + qGreen(pixel) + qBlue(pixel))/3.0;
+                QRgb pixel0 = colorImage.pixel(ix, iy);
+                double inten0 = ((qRed(pixel0) + qGreen(pixel0) + qBlue(pixel0)) / 3.0);
 
-                for(rd=-radius;rd<=radius;rd++)
-                    for(cd=-radius;cd<=radius;cd++)
-                        if(r + rd >= 0 && r + rd < h && c + cd >= 0 && c + cd < w)
+                for (int ky = -kernelHalfSide; ky <= kernelHalfSide; ky++)
+                {
+                    for (int kx = -kernelHalfSide; kx <= kernelHalfSide; kx++)
                     {
-                         pixel = colorImage.pixel(c+cd, r+rd);
-                         double weight = kernel[rd + radius]*kernel[cd + radius];
+                        if (iy + ky >= 0 && iy + ky < h && ix + kx >= 0 && ix + kx < w)
+                        {
+                            double weight = kernel[ky + kernelHalfSide]*kernel[kx + kernelHalfSide];
 
-                         double inten1 = (double) (qRed(pixel) + qGreen(pixel) + qBlue(pixel))/3.0;
+                            QRgb pixel1 = colorImage.pixel(ix+kx, iy+ky);
+                            double inten1 = ((qRed(pixel1) + qGreen(pixel1) + qBlue(pixel1)) / 3.0);
+                            weight *= exp(-((inten0 - inten1)*(inten0 - inten1))/(2.0*sigmaI*sigmaI));
 
-                         weight *= exp(-((inten0 - inten1)*(inten0 - inten1))/(2.0*sigmaI*sigmaI));
-
-                         cost += weight * buffer[(r+rd)*w+(c+cd)];
-                         denom += weight;
+                            cost += weight * buffer[(iy+ky)*w+(ix+kx)];
+                            denom += weight;
+                        }
                     }
+                }
 
-                cost /= denom;
-
-                matchCostPart[r*w + c] = cost;
+                matchCostPart[iy*w + ix] = (cost / denom);
             }
         }
-
-
-        delete [] kernel;
     }
+
+    delete[] buffer;
+    delete[] kernel;
 }
 
 /*******************************************************************************
