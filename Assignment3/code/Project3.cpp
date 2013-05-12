@@ -356,6 +356,9 @@ void MainWindow::FillHoles(double *projDisparity, double *projDisparityCt, int w
 *******************************************************************************
 *******************************************************************************/
 
+// Prototypes
+void ConvolveHelper(double *image, int width, int height, double *kernel, int kernelWidth, int kernelHeight);
+
 /*******************************************************************************
 Compute match cost using Squared Distance
     image1 - Input image 1
@@ -517,7 +520,10 @@ Gaussian blur the match score.
 *******************************************************************************/
 void MainWindow::GaussianBlurMatchScore(double *matchCost, int w, int h, int numDisparities, double sigma)
 {
-    // Add your code here
+    for (int d = 0; d < numDisparities; d++)
+    {
+        SeparableGaussianBlurImage(matchCost + d*w*h, w, h, sigma);
+    }
 }
 
 /*******************************************************************************
@@ -530,9 +536,79 @@ Blur a floating piont image using Gaussian kernel (helper function for GaussianB
 *******************************************************************************/
 void MainWindow::SeparableGaussianBlurImage(double *image, int w, int h, double sigma)
 {
-    // Add your code here
+    if (sigma <= 0)
+    {
+        return;
+    }
+
+    // Calculate the kernel (some extra computation/storage, should be fine...)
+    double twoSigSq = 2.0 * pow(sigma, 2);
+    double sigSqRt = sigma * sqrt(2*M_PI);
+    int kernelHalfSide = static_cast<int>(ceil(3 * sigma));
+    int kernelSize = ((2 * kernelHalfSide) + 1);
+    double *kernel = new double[kernelSize];
+    for (int i = 0; i < kernelSize; i++)
+    {
+        int y = (i - kernelHalfSide);
+        kernel[i] = (1.0 / (sigSqRt)) * pow(M_E, -1*(pow(y,2.0))/twoSigSq);
+    }
+
+    // Generate the updated image
+    ConvolveHelper(image, w, h, kernel, kernelSize, 1);
+    ConvolveHelper(image, w, h, kernel, 1, kernelSize);
+
+    // Clean up!
+    delete[] kernel;
 }
 
+void ConvolveHelper(double *image, int width, int height, double *kernel, int kernelWidth, int kernelHeight)
+{
+    int kernelHalfHeight = (kernelHeight / 2);
+    int kernelHalfWidth = (kernelWidth / 2);
+
+    // Create and initialize our buffer
+    int bufferHeight = (height + 2*kernelHalfHeight);
+    int bufferWidth = (width + 2*kernelHalfWidth);
+    double *buffer = new double[bufferWidth*bufferHeight];
+    for (int by = 0; by < bufferHeight; by++)
+    {
+        for (int bx = 0; bx < bufferWidth; bx++)
+        {
+            int iy = (by - kernelHalfHeight);
+            int ix = (bx - kernelHalfWidth);
+
+            buffer[by*bufferWidth+bx] =
+                    ((0 <= iy && iy < height && 0 <= ix && ix < width) ?
+                         image[iy*width+ix] : 0.0);
+        }
+    }
+
+    // Now, convolve the kernel over the image
+    for (int iy = 0; iy < height; iy++)
+    {
+        for (int ix = 0; ix < width; ix++)
+        {
+            double result = 0.0;
+            for (int ky = 0; ky < kernelHeight; ky++)
+            {
+                for (int kx = 0; kx < kernelWidth; kx++)
+                {
+                    double kernelWeight = kernel[ky*kernelWidth+kx];
+
+                    // Translate to coordinates in buffer space
+                    int by = iy + ky;
+                    int bx = ix + kx;
+                    result += kernelWeight*buffer[by*bufferWidth+bx];
+                }
+            }
+
+            image[iy*width+ix] = result;
+        }
+    }
+
+    // Clean up!
+    delete[] buffer;
+}
 
 
 /*******************************************************************************
