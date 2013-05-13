@@ -744,6 +744,8 @@ void MainWindow::ComputeSegmentMeans(QImage image, int *segment, int numSegments
         meanColor[i][1] /= numPixels;
         meanColor[i][2] /= numPixels;
     }
+
+    delete[] segmentPixels;
 }
 
 /*******************************************************************************
