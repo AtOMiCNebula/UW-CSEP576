@@ -820,7 +820,49 @@ for each pixel in a segment.
 void MainWindow::SegmentAverageMatchCost(int *segment, int numSegments,
                                          int w, int h, int numDisparities, double *matchCost)
 {
-    // Add your code here
+    // Allocate storage for our intermediate calculations
+    double *segmentCosts = new double[numSegments];
+    int *segmentPixels = new int[numSegments];
+
+    for (int d = 0; d < numDisparities; d++)
+    {
+        // Initialize our intermediate calculation variables
+        for (int s = 0; s < numSegments; s++)
+        {
+            segmentCosts[s] = 0;
+            segmentPixels[s] = 0;
+        }
+
+        // For each disparity, sum up the costs for each segment
+        for (int y = 0; y < h; y++)
+        {
+            for (int x = 0; x < w; x++)
+            {
+                int s = segment[y*w + x];
+                segmentCosts[s] += matchCost[d*w*h + y*w + x];
+                segmentPixels[s]++;
+            }
+        }
+
+        // Turn our sums into means for each segment
+        for (int s = 0; s < numSegments; s++)
+        {
+            segmentCosts[s] /= segmentPixels[s];
+        }
+
+        // Save the mean for each segment back into meanCosts
+        for (int y = 0; y < h; y++)
+        {
+            for (int x = 0; x < w; x++)
+            {
+                int s = segment[y*w + x];
+                matchCost[d*w*h + y*w + x] = segmentCosts[s];
+            }
+        }
+    }
+
+    delete[] segmentPixels;
+    delete[] segmentCosts;
 }
 
 /*******************************************************************************
