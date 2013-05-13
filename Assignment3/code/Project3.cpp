@@ -759,7 +759,51 @@ Assign each pixel to the closest segment using position and color
 void MainWindow::AssignPixelsToSegments(QImage image, int *segment, int numSegments, double (*meanSpatial)[2], double (*meanColor)[3],
                             double spatialSigma, double colorSigma)
 {
-    // Add your code here
+    // Loop over each pixel to see if we can assign it to a better segment
+    int h = image.height();
+    int w = image.width();
+    for (int y = 0; y < h; y++)
+    {
+        for (int x = 0; x < w; x++)
+        {
+            QRgb pixel = image.pixel(x, y);
+            int bestSegment = -1;
+            double bestSegmentDistance = 0;
+
+            for (int s = 0; s < numSegments; s++)
+            {
+                // Calculate the Mahalanobis distance using the means we have
+                // for locality and color.  This requires the following:
+                //    D = [X - mu]^T  *  S^-1  *  [X - mu]
+                // (where S is a matrix with sigma^2 values along the diagonal)
+                // I'm just performing the direct math here, no need for full
+                // matrix multiplication, given the identity-like matrix S.
+                double matXMu[5] = { (x - meanSpatial[s][0]),
+                                     (y - meanSpatial[s][1]),
+                                     (qRed(pixel) - meanColor[s][0]),
+                                     (qGreen(pixel) - meanColor[s][1]),
+                                     (qBlue(pixel) - meanColor[s][2]) };
+                double matSInv[5] = { (1 / pow(spatialSigma, 2)),
+                                      (1 / pow(spatialSigma, 2)),
+                                      (1 / pow(colorSigma, 2)),
+                                      (1 / pow(colorSigma, 2)),
+                                      (1 / pow(colorSigma, 2)) };
+                double distance = ((matXMu[0]*matSInv[0]*matXMu[0]) +
+                                   (matXMu[1]*matSInv[1]*matXMu[1]) +
+                                   (matXMu[2]*matSInv[2]*matXMu[2]) +
+                                   (matXMu[3]*matSInv[3]*matXMu[3]) +
+                                   (matXMu[4]*matSInv[4]*matXMu[4]));
+
+                if (bestSegment == -1 || distance < bestSegmentDistance)
+                {
+                    bestSegment = s;
+                    bestSegmentDistance = distance;
+                }
+            }
+
+            segment[y*w + x] = bestSegment;
+        }
+    }
 }
 
 /*******************************************************************************
