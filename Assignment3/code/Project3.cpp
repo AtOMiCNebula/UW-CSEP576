@@ -395,9 +395,9 @@ void MainWindow::SSD(QImage image1, QImage image2, int minDisparity, int maxDisp
                     pixelRight = qRgb(0, 0, 0);
                 }
 
-                matchCost[d*w*h + y*w + x] = (pow(0.3*(qRed(pixelLeft) - qRed(pixelRight)), 2) +
-                                              pow(0.6*(qGreen(pixelLeft) - qGreen(pixelRight)), 2) +
-                                              pow(0.1*(qBlue(pixelLeft) - qBlue(pixelRight)), 2));
+                matchCost[d*w*h + y*w + x] = sqrt(pow(1.0*(qRed(pixelLeft) - qRed(pixelRight)), 2) +
+                                                  pow(1.0*(qGreen(pixelLeft) - qGreen(pixelRight)), 2) +
+                                                  pow(1.0*(qBlue(pixelLeft) - qBlue(pixelRight)), 2));
             }
         }
     }
@@ -439,9 +439,9 @@ void MainWindow::SAD(QImage image1, QImage image2, int minDisparity, int maxDisp
                     pixelRight = qRgb(0, 0, 0);
                 }
 
-                matchCost[d*w*h + y*w + x] = abs(0.3*(qRed(pixelLeft) - qRed(pixelRight))) +
-                                             abs(0.6*(qGreen(pixelLeft) - qGreen(pixelRight))) +
-                                             abs(0.1*(qBlue(pixelLeft) - qBlue(pixelRight)));
+                matchCost[d*w*h + y*w + x] = abs(qRed(pixelLeft) - qRed(pixelRight)) +
+                                             abs(qGreen(pixelLeft) - qGreen(pixelRight)) +
+                                             abs(qBlue(pixelLeft) - qBlue(pixelRight));
             }
         }
     }
