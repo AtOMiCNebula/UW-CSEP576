@@ -136,7 +136,7 @@ void MainWindow::SaveClassifier(QString fileName)
    int i, j;
    FILE *out;
 
-   out = fopen(fileName.toAscii(), "w");
+   out = fopen(fileName.toLatin1(), "w");
 
    fprintf(out, "%d\n", m_NumWeakClassifiers);
 
@@ -166,7 +166,7 @@ void MainWindow::OpenClassifier(QString fileName)
     int i, j;
     FILE *in;
 
-    in = fopen(fileName.toAscii(), "r");
+    in = fopen(fileName.toLatin1(), "r");
 
     fscanf(in, "%d\n", &m_NumWeakClassifiers);
     m_WeakClassifiers = new CWeakClassifiers [m_NumWeakClassifiers];
