@@ -1,0 +1,6 @@
+1000
+64
+500
+100
+faces
+background
