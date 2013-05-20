@@ -356,6 +356,9 @@ void MainWindow::FillHoles(double *projDisparity, double *projDisparityCt, int w
 *******************************************************************************
 *******************************************************************************/
 
+// Prototypes
+void ConvolveHelper(double *image, int width, int height, double *kernel, int kernelWidth, int kernelHeight);
+
 /*******************************************************************************
 Compute match cost using Squared Distance
     image1 - Input image 1
@@ -371,8 +374,33 @@ void MainWindow::SSD(QImage image1, QImage image2, int minDisparity, int maxDisp
 {
     int w = image1.width();
     int h = image1.height();
+    int numDisparities = (maxDisparity - minDisparity); // falls short by one, but this is how the harness determines it
 
-    // Add your code here
+    for (int y = 0; y < h; y++)
+    {
+        for (int x = 0; x < w; x++)
+        {
+            QRgb pixelLeft = image1.pixel(x, y);
+
+            for (int d = 0; d < numDisparities; d++)
+            {
+                int xd = (x - (minDisparity + d));
+                QRgb pixelRight;
+                if (0 <= xd && xd < w)
+                {
+                    pixelRight = image2.pixel(xd, y);
+                }
+                else
+                {
+                    pixelRight = qRgb(0, 0, 0);
+                }
+
+                matchCost[d*w*h + y*w + x] = sqrt(pow(1.0*(qRed(pixelLeft) - qRed(pixelRight)), 2) +
+                                                  pow(1.0*(qGreen(pixelLeft) - qGreen(pixelRight)), 2) +
+                                                  pow(1.0*(qBlue(pixelLeft) - qBlue(pixelRight)), 2));
+            }
+        }
+    }
 }
 
 /*******************************************************************************
@@ -390,9 +418,33 @@ void MainWindow::SAD(QImage image1, QImage image2, int minDisparity, int maxDisp
 {
    int w = image1.width();
    int h = image1.height();
+    int numDisparities = (maxDisparity - minDisparity); // falls short by one, but this is how the harness determines it
 
-   // Add your code here
+    for (int y = 0; y < h; y++)
+    {
+        for (int x = 0; x < w; x++)
+        {
+            QRgb pixelLeft = image1.pixel(x, y);
 
+            for (int d = 0; d < numDisparities; d++)
+            {
+                int xd = (x - (minDisparity + d));
+                QRgb pixelRight;
+                if (0 <= xd && xd < w)
+                {
+                    pixelRight = image2.pixel(xd, y);
+                }
+                else
+                {
+                    pixelRight = qRgb(0, 0, 0);
+                }
+
+                matchCost[d*w*h + y*w + x] = abs(qRed(pixelLeft) - qRed(pixelRight)) +
+                                             abs(qGreen(pixelLeft) - qGreen(pixelRight)) +
+                                             abs(qBlue(pixelLeft) - qBlue(pixelRight));
+            }
+        }
+    }
 }
 
 /*******************************************************************************
@@ -411,9 +463,50 @@ void MainWindow::NCC(QImage image1, QImage image2, int minDisparity, int maxDisp
 {
    int w = image1.width();
    int h = image1.height();
+    int numDisparities = (maxDisparity - minDisparity); // falls short by one, but this is how the harness determines it
 
-   // Add your code here
+    for (int y = 0; y < h; y++)
+    {
+        for (int x = 0; x < w; x++)
+        {
+            for (int d = 0; d < numDisparities; d++)
+            {
+                int D = (minDisparity+d);
 
+                double sumDiff_img1img2 = 0.0;
+                double sumDiffSq_img1 = 0.0;
+                double sumDiffSq_img2 = 0.0;
+                for (int ry = -radius; ry <= radius; ry++)
+                {
+                    int Y = y+ry;
+                    if (!(0 <= Y && Y < h))
+                    {
+                        continue;
+                    }
+
+                    for (int rx = -radius; rx <= radius; rx++)
+                    {
+                        int X = x+rx;
+                        int XD = X-D;
+                        if (!(0 <= X && X < w) || !(0 <= XD && XD < w))
+                        {
+                            continue;
+                        }
+
+                        QRgb pixel1 = image1.pixel(X, Y);
+                        QRgb pixel2 = image2.pixel(XD, Y);
+                        double intensity1 = (0.3*qRed(pixel1) + 0.6*qGreen(pixel1) + 0.1*qBlue(pixel1));
+                        double intensity2 = (0.3*qRed(pixel2) + 0.6*qGreen(pixel2) + 0.1*qBlue(pixel2));
+                        sumDiff_img1img2 += (intensity1 * intensity2);
+                        sumDiffSq_img1 += pow(intensity1, 2);
+                        sumDiffSq_img2 += pow(intensity2, 2);
+                    }
+                }
+
+                matchCost[d*w*h + y*w + x] = (1 - (sumDiff_img1img2 / sqrt(sumDiffSq_img1*sumDiffSq_img2)));
+            }
+        }
+    }
 }
 
 /*******************************************************************************
@@ -427,7 +520,10 @@ Gaussian blur the match score.
 *******************************************************************************/
 void MainWindow::GaussianBlurMatchScore(double *matchCost, int w, int h, int numDisparities, double sigma)
 {
-    // Add your code here
+    for (int d = 0; d < numDisparities; d++)
+    {
+        SeparableGaussianBlurImage(matchCost + d*w*h, w, h, sigma);
+    }
 }
 
 /*******************************************************************************
@@ -440,9 +536,79 @@ Blur a floating piont image using Gaussian kernel (helper function for GaussianB
 *******************************************************************************/
 void MainWindow::SeparableGaussianBlurImage(double *image, int w, int h, double sigma)
 {
-    // Add your code here
+    if (sigma <= 0)
+    {
+        return;
+    }
+
+    // Calculate the kernel (some extra computation/storage, should be fine...)
+    double twoSigSq = 2.0 * pow(sigma, 2);
+    double sigSqRt = sigma * sqrt(2*M_PI);
+    int kernelHalfSide = static_cast<int>(ceil(3 * sigma));
+    int kernelSize = ((2 * kernelHalfSide) + 1);
+    double *kernel = new double[kernelSize];
+    for (int i = 0; i < kernelSize; i++)
+    {
+        int y = (i - kernelHalfSide);
+        kernel[i] = (1.0 / (sigSqRt)) * pow(M_E, -1*(pow(y,2.0))/twoSigSq);
+    }
+
+    // Generate the updated image
+    ConvolveHelper(image, w, h, kernel, kernelSize, 1);
+    ConvolveHelper(image, w, h, kernel, 1, kernelSize);
+
+    // Clean up!
+    delete[] kernel;
 }
 
+void ConvolveHelper(double *image, int width, int height, double *kernel, int kernelWidth, int kernelHeight)
+{
+    int kernelHalfHeight = (kernelHeight / 2);
+    int kernelHalfWidth = (kernelWidth / 2);
+
+    // Create and initialize our buffer
+    int bufferHeight = (height + 2*kernelHalfHeight);
+    int bufferWidth = (width + 2*kernelHalfWidth);
+    double *buffer = new double[bufferWidth*bufferHeight];
+    for (int by = 0; by < bufferHeight; by++)
+    {
+        for (int bx = 0; bx < bufferWidth; bx++)
+        {
+            int iy = (by - kernelHalfHeight);
+            int ix = (bx - kernelHalfWidth);
+
+            buffer[by*bufferWidth+bx] =
+                    ((0 <= iy && iy < height && 0 <= ix && ix < width) ?
+                         image[iy*width+ix] : 0.0);
+        }
+    }
+
+    // Now, convolve the kernel over the image
+    for (int iy = 0; iy < height; iy++)
+    {
+        for (int ix = 0; ix < width; ix++)
+        {
+            double result = 0.0;
+            for (int ky = 0; ky < kernelHeight; ky++)
+            {
+                for (int kx = 0; kx < kernelWidth; kx++)
+                {
+                    double kernelWeight = kernel[ky*kernelWidth+kx];
+
+                    // Translate to coordinates in buffer space
+                    int by = iy + ky;
+                    int bx = ix + kx;
+                    result += kernelWeight*buffer[by*bufferWidth+bx];
+                }
+            }
+
+            image[iy*width+ix] = result;
+        }
+    }
+
+    // Clean up!
+    delete[] buffer;
+}
 
 
 /*******************************************************************************
@@ -456,7 +622,75 @@ Bilaterally blur the match score using the colorImage to compute kernel weights
 void MainWindow::BilateralBlurMatchScore(double *matchCost, int w, int h, int numDisparities,
                                          double sigmaS, double sigmaI, QImage colorImage)
 {
-    // Add your code here
+    if (sigmaS <= 0)
+    {
+        return;
+    }
+
+    // Compute our Gaussian kernel (we only need to compute it once)
+    double twoSigSq = 2.0 * pow(sigmaS, 2);
+    double sigSqRt = sigmaS * sqrt(2*M_PI);
+    int kernelHalfSide = static_cast<int>(ceil(3 * sigmaS));
+    int kernelSize = ((2 * kernelHalfSide) + 1);
+    double *kernel = new double[kernelSize];
+    for (int i = 0; i < kernelSize; i++)
+    {
+        int y = (i - kernelHalfSide);
+        kernel[i] = (1.0 / (sigSqRt)) * pow(M_E, -1*(pow(y,2.0))/twoSigSq);
+    }
+
+    // Allocate some space for our buffer (we'll fill it for each disparity)
+    double *buffer = new double[w*h];
+
+    for (int d = 0; d < numDisparities; d++)
+    {
+        double *matchCostPart = (matchCost + d*w*h);
+
+        // Fill our buffer space with the disparity we'll be looking at
+        for (int y = 0; y < h; y++)
+        {
+            for (int x = 0; x < w; x++)
+            {
+                buffer[y*w + x] = matchCostPart[y*w + x];
+            }
+        }
+
+        // Compute the Gaussian (with the intensities for Bilateral)
+        for (int iy = 0; iy < h; iy++)
+        {
+            for (int ix = 0; ix < w; ix++)
+            {
+                double cost = 0.0;
+                double denom = 0.0;
+
+                QRgb pixel0 = colorImage.pixel(ix, iy);
+                double inten0 = ((qRed(pixel0) + qGreen(pixel0) + qBlue(pixel0)) / 3.0);
+
+                for (int ky = -kernelHalfSide; ky <= kernelHalfSide; ky++)
+                {
+                    for (int kx = -kernelHalfSide; kx <= kernelHalfSide; kx++)
+                    {
+                        if (iy + ky >= 0 && iy + ky < h && ix + kx >= 0 && ix + kx < w)
+                        {
+                            double weight = kernel[ky + kernelHalfSide]*kernel[kx + kernelHalfSide];
+
+                            QRgb pixel1 = colorImage.pixel(ix+kx, iy+ky);
+                            double inten1 = ((qRed(pixel1) + qGreen(pixel1) + qBlue(pixel1)) / 3.0);
+                            weight *= exp(-((inten0 - inten1)*(inten0 - inten1))/(2.0*sigmaI*sigmaI));
+
+                            cost += weight * buffer[(iy+ky)*w+(ix+kx)];
+                            denom += weight;
+                        }
+                    }
+                }
+
+                matchCostPart[iy*w + ix] = (cost / denom);
+            }
+        }
+    }
+
+    delete[] buffer;
+    delete[] kernel;
 }
 
 /*******************************************************************************
@@ -469,7 +703,49 @@ Compute the mean color and position for each segment (helper function for Segmen
 *******************************************************************************/
 void MainWindow::ComputeSegmentMeans(QImage image, int *segment, int numSegments, double (*meanSpatial)[2], double (*meanColor)[3])
 {
-    // Add your code here
+    // Create an array to hold the number of pixels in each segment, so that we
+    // can accurately calculate the average later
+    int *segmentPixels = new int[numSegments];
+
+    // Initialize our storage variables
+    for (int i = 0; i < numSegments; i++)
+    {
+        meanSpatial[i][0] = meanSpatial[i][1] = 0;
+        meanColor[i][0] = meanColor[i][1] = meanColor[i][2] = 0;
+        segmentPixels[i] = 0;
+    }
+
+    // Calculate the sums!
+    int h = image.height();
+    int w = image.width();
+    for (int y = 0; y < h; y++)
+    {
+        for (int x = 0; x < w; x++)
+        {
+            QRgb pixel = image.pixel(x, y);
+            int s = segment[y*w + x];
+
+            meanSpatial[s][0] += x;
+            meanSpatial[s][1] += y;
+            meanColor[s][0] += qRed(pixel);
+            meanColor[s][1] += qGreen(pixel);
+            meanColor[s][2] += qBlue(pixel);
+            segmentPixels[s]++;
+        }
+    }
+
+    // Update our outputs to be means, instead of sums
+    for (int i = 0; i < numSegments; i++)
+    {
+        int numPixels = segmentPixels[i];
+        meanSpatial[i][0] /= numPixels;
+        meanSpatial[i][1] /= numPixels;
+        meanColor[i][0] /= numPixels;
+        meanColor[i][1] /= numPixels;
+        meanColor[i][2] /= numPixels;
+    }
+
+    delete[] segmentPixels;
 }
 
 /*******************************************************************************
@@ -485,7 +761,51 @@ Assign each pixel to the closest segment using position and color
 void MainWindow::AssignPixelsToSegments(QImage image, int *segment, int numSegments, double (*meanSpatial)[2], double (*meanColor)[3],
                             double spatialSigma, double colorSigma)
 {
-    // Add your code here
+    // Loop over each pixel to see if we can assign it to a better segment
+    int h = image.height();
+    int w = image.width();
+    for (int y = 0; y < h; y++)
+    {
+        for (int x = 0; x < w; x++)
+        {
+            QRgb pixel = image.pixel(x, y);
+            int bestSegment = -1;
+            double bestSegmentDistance = 0;
+
+            for (int s = 0; s < numSegments; s++)
+            {
+                // Calculate the Mahalanobis distance using the means we have
+                // for locality and color.  This requires the following:
+                //    D = [X - mu]^T  *  S^-1  *  [X - mu]
+                // (where S is a matrix with sigma^2 values along the diagonal)
+                // I'm just performing the direct math here, no need for full
+                // matrix multiplication, given the identity-like matrix S.
+                double matXMu[5] = { (x - meanSpatial[s][0]),
+                                     (y - meanSpatial[s][1]),
+                                     (qRed(pixel) - meanColor[s][0]),
+                                     (qGreen(pixel) - meanColor[s][1]),
+                                     (qBlue(pixel) - meanColor[s][2]) };
+                double matSInv[5] = { (1 / pow(spatialSigma, 2)),
+                                      (1 / pow(spatialSigma, 2)),
+                                      (1 / pow(colorSigma, 2)),
+                                      (1 / pow(colorSigma, 2)),
+                                      (1 / pow(colorSigma, 2)) };
+                double distance = ((matXMu[0]*matSInv[0]*matXMu[0]) +
+                                   (matXMu[1]*matSInv[1]*matXMu[1]) +
+                                   (matXMu[2]*matSInv[2]*matXMu[2]) +
+                                   (matXMu[3]*matSInv[3]*matXMu[3]) +
+                                   (matXMu[4]*matSInv[4]*matXMu[4]));
+
+                if (bestSegment == -1 || distance < bestSegmentDistance)
+                {
+                    bestSegment = s;
+                    bestSegmentDistance = distance;
+                }
+            }
+
+            segment[y*w + x] = bestSegment;
+        }
+    }
 }
 
 /*******************************************************************************
@@ -500,7 +820,49 @@ for each pixel in a segment.
 void MainWindow::SegmentAverageMatchCost(int *segment, int numSegments,
                                          int w, int h, int numDisparities, double *matchCost)
 {
-    // Add your code here
+    // Allocate storage for our intermediate calculations
+    double *segmentCosts = new double[numSegments];
+    int *segmentPixels = new int[numSegments];
+
+    for (int d = 0; d < numDisparities; d++)
+    {
+        // Initialize our intermediate calculation variables
+        for (int s = 0; s < numSegments; s++)
+        {
+            segmentCosts[s] = 0;
+            segmentPixels[s] = 0;
+        }
+
+        // For each disparity, sum up the costs for each segment
+        for (int y = 0; y < h; y++)
+        {
+            for (int x = 0; x < w; x++)
+            {
+                int s = segment[y*w + x];
+                segmentCosts[s] += matchCost[d*w*h + y*w + x];
+                segmentPixels[s]++;
+            }
+        }
+
+        // Turn our sums into means for each segment
+        for (int s = 0; s < numSegments; s++)
+        {
+            segmentCosts[s] /= segmentPixels[s];
+        }
+
+        // Save the mean for each segment back into meanCosts
+        for (int y = 0; y < h; y++)
+        {
+            for (int x = 0; x < w; x++)
+            {
+                int s = segment[y*w + x];
+                matchCost[d*w*h + y*w + x] = segmentCosts[s];
+            }
+        }
+    }
+
+    delete[] segmentPixels;
+    delete[] segmentCosts;
 }
 
 /*******************************************************************************
@@ -513,7 +875,25 @@ For each pixel find the disparity with minimum match cost
 *******************************************************************************/
 void MainWindow::FindBestDisparity(double *matchCost, double *disparities, int w, int h, int minDisparity, int numDisparities)
 {
-    // Add your code here
+    for (int y = 0; y < h; y++)
+    {
+        for (int x = 0; x < w; x++)
+        {
+            int bestDisparity = -1;
+            double bestDisparityError = 0.0;
+
+            for (int d = 0; d < numDisparities; d++)
+            {
+                if (bestDisparity == -1 || matchCost[d*w*h + y*w + x] < bestDisparityError)
+                {
+                    bestDisparity = d;
+                    bestDisparityError = matchCost[d*w*h + y*w + x];
+                }
+            }
+
+            disparities[y*w+x] = (minDisparity + bestDisparity);
+        }
+    }
 }
 
 /*******************************************************************************
