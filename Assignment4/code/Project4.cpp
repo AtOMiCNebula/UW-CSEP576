@@ -794,7 +794,25 @@ void MainWindow::DisplayAverageFace(QImage *displayImage, double *trainingData, 
 *******************************************************************************/
 void MainWindow::IntegralImage(double *image, double *integralImage, int w, int h)
 {
-    // Add your code here.
+    for (int y = 0; y < h; y++)
+    {
+        for (int x = 0; x < w; x++)
+        {
+            integralImage[y*w+x] = image[y*w+x];
+            if (x > 0)
+            {
+                integralImage[y*w+x] += integralImage[y*w+(x-1)];
+            }
+            if (y > 0)
+            {
+                integralImage[y*w+x] += integralImage[(y-1)*w+x];
+            }
+            if (y > 0 && x > 0)
+            {
+                integralImage[y*w+x] -= integralImage[(y-1)*w+(x-1)];
+            }
+        }
+    }
 }
 
 /*******************************************************************************
