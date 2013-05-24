@@ -823,9 +823,21 @@ void MainWindow::IntegralImage(double *image, double *integralImage, int w, int 
 *******************************************************************************/
 double MainWindow::BilinearInterpolation(double *image, double x, double y, int w)
 {
-    // Add your code here (or cut and paste from a previous assignment.)
+    int x1 = static_cast<int>(floor(x));
+    int y1 = static_cast<int>(floor(y));
+    int x2 = static_cast<int>(ceil(x+0.00001));
+    int y2 = static_cast<int>(ceil(y+0.00001));
 
-    return 0.0;
+    double intensity11 = image[y1*w+x1];
+    double intensity12 = image[y2*w+x1];
+    double intensity21 = image[y1*w+x2];
+    double intensity22 = image[y2*w+x2];
+
+    return (1 / ((x2-x1)*(y2-y1))) *
+            ((intensity11*(x2-x)*(y2-y)) +
+             (intensity21*(x-x1)*(y2-y)) +
+             (intensity12*(x2-x)*(y-y1)) +
+             (intensity22*(x-x1)*(y-y1)));
 }
 
 /*******************************************************************************
@@ -837,9 +849,7 @@ double MainWindow::BilinearInterpolation(double *image, double x, double y, int 
 *******************************************************************************/
 double MainWindow::SumBox(double *integralImage, double x0, double y0, double x1, double y1, int w)
 {
-    // Add your code here, use BilinearInterpolation as a helper function.
-
-    return 0.0;
+    return (BilinearInterpolation(integralImage, x1, y1, w) - BilinearInterpolation(integralImage, x0, y0, w));
 }
 
 /*******************************************************************************
