@@ -719,7 +719,71 @@ void MainWindow::DrawFace(QImage *displayImage, QMap<double, CDetection> *faceDe
 *******************************************************************************/
 void MainWindow::DisplayAverageFace(QImage *displayImage, double *trainingData, int *trainingLabel, int numTrainingExamples, int patchSize)
 {
-    // Add your code here.
+    // Initialize our composite storage
+    double *compositeFace = new double[patchSize*patchSize];
+    double *compositeNonFace = new double[patchSize*patchSize];
+    for (int y = 0; y < patchSize; y++)
+    {
+        for (int x = 0; x < patchSize; x++)
+        {
+            compositeFace[y*patchSize+x] = compositeNonFace[y*patchSize+x] = 0;
+        }
+    }
+
+    // Loop through our training labels to determine how much of each we have
+    int compositeFaceCount = 0;
+    int compositeNonFaceCount = 0;
+    for (int i = 0; i < numTrainingExamples; i++)
+    {
+        if (trainingLabel[i] == 1)
+        {
+            compositeFaceCount++;
+        }
+        else
+        {
+            compositeNonFaceCount++;
+        }
+    }
+
+    // Now, sum up all the patches
+    for (int y = 0; y < patchSize; y++)
+    {
+        for (int x = 0; x < patchSize; x++)
+        {
+            for (int i = 0; i < numTrainingExamples; i++)
+            {
+                double trainingValue = trainingData[i*patchSize*patchSize+y*patchSize+x];
+                if (trainingLabel[i] == 1)
+                {
+                    compositeFace[y*patchSize+x] += trainingValue;
+                }
+                else
+                {
+                    compositeNonFace[y*patchSize+x] += trainingValue;
+                }
+            }
+        }
+    }
+
+    // Resize displayImage
+    QImage temp(patchSize*2, patchSize, displayImage->format());
+    displayImage->swap(temp);
+
+    // Draw out the composite!
+    for (int y = 0; y < patchSize; y++)
+    {
+        for (int x = 0; x < patchSize; x++)
+        {
+            int intensityFace = static_cast<int>(floor((compositeFace[y*patchSize+x]/compositeFaceCount)+0.5));
+            int intensityNonFace = static_cast<int>(floor((compositeNonFace[y*patchSize+x]/compositeNonFaceCount)+0.5));
+            displayImage->setPixel(x, y, qRgb(intensityFace, intensityFace, intensityFace));
+            displayImage->setPixel(x+patchSize, y, qRgb(intensityNonFace, intensityNonFace, intensityNonFace));
+        }
+    }
+
+    // Clean up!
+    delete[] compositeNonFace;
+    delete[] compositeFace;
 }
 
 /*******************************************************************************
