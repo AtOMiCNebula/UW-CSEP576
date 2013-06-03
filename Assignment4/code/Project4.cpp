@@ -1048,10 +1048,30 @@ void MainWindow::NMS(QMap<double, CDetection> *faceDetections, double xyThreshol
     // This is how you iterate through all the faces detections (lowest face detection score first.)
     while(iterator != faceDetections->constEnd())
     {
-        // Add your code here.
+        double x = iterator->m_X;
+        double y = iterator->m_Y;
+        double scale = iterator->m_Scale;
 
-        // Add a face detection to finalFaceDetections using:
-        // finalFaceDetections.insertMulti(iterator.key(), iterator.value());
+        // Use a second iterator to compare stronger matches to the current match
+        QMap<double, CDetection>::const_iterator iteratorInner = (iterator + 1);
+        while (iteratorInner != faceDetections->constEnd())
+        {
+            if (fabs(iteratorInner->m_X - x) <= xyThreshold &&
+                fabs(iteratorInner->m_Y - y) <= xyThreshold &&
+                fabs(iteratorInner->m_Scale - scale) <= scaleThreshold)
+            {
+                break;
+            }
+
+            iteratorInner++;
+        }
+
+        // If our second iterator made it to the end, we didn't match any
+        // stronger responses, so add this match to our list!
+        if (iteratorInner == faceDetections->constEnd())
+        {
+            finalFaceDetections.insertMulti(iterator.key(), iterator.value());
+        }
 
         iterator++;
     }
