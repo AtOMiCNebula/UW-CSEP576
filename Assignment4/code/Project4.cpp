@@ -136,7 +136,7 @@ void MainWindow::SaveClassifier(QString fileName)
    int i, j;
    FILE *out;
 
-   out = fopen(fileName.toLatin1(), "w");
+   fopen_s(&out, fileName.toLatin1(), "w");
 
    fprintf(out, "%d\n", m_NumWeakClassifiers);
 
@@ -166,25 +166,25 @@ void MainWindow::OpenClassifier(QString fileName)
     int i, j;
     FILE *in;
 
-    in = fopen(fileName.toLatin1(), "r");
+    fopen_s(&in, fileName.toLatin1(), "r");
 
-    fscanf(in, "%d\n", &m_NumWeakClassifiers);
+    fscanf_s(in, "%d\n", &m_NumWeakClassifiers);
     m_WeakClassifiers = new CWeakClassifiers [m_NumWeakClassifiers];
 
     for(i=0;i<m_NumWeakClassifiers;i++)
     {
-        fscanf(in, "%d\n", &(m_WeakClassifiers[i].m_NumBoxes));
+        fscanf_s(in, "%d\n", &(m_WeakClassifiers[i].m_NumBoxes));
         m_WeakClassifiers[i].m_Box = new double [m_WeakClassifiers[i].m_NumBoxes][2][2];
         m_WeakClassifiers[i].m_BoxSign = new double [m_WeakClassifiers[i].m_NumBoxes];
 
         for(j=0;j<m_WeakClassifiers[i].m_NumBoxes;j++)
-            fscanf(in, "%lf\t%lf\t%lf\t%lf\t%lf\n", &(m_WeakClassifiers[i].m_BoxSign[j]), &(m_WeakClassifiers[i].m_Box[j][0][0]), &(m_WeakClassifiers[i].m_Box[j][0][1]),
+            fscanf_s(in, "%lf\t%lf\t%lf\t%lf\t%lf\n", &(m_WeakClassifiers[i].m_BoxSign[j]), &(m_WeakClassifiers[i].m_Box[j][0][0]), &(m_WeakClassifiers[i].m_Box[j][0][1]),
                     &(m_WeakClassifiers[i].m_Box[j][1][0]), &(m_WeakClassifiers[i].m_Box[j][1][1]));
 
-        fscanf(in, "%lf\n", &(m_WeakClassifiers[i].m_Area));
-        fscanf(in, "%lf\n", &(m_WeakClassifiers[i].m_Polarity));
-        fscanf(in, "%lf\n", &(m_WeakClassifiers[i].m_Threshold));
-        fscanf(in, "%lf\n", &(m_WeakClassifiers[i].m_Weight));
+        fscanf_s(in, "%lf\n", &(m_WeakClassifiers[i].m_Area));
+        fscanf_s(in, "%lf\n", &(m_WeakClassifiers[i].m_Polarity));
+        fscanf_s(in, "%lf\n", &(m_WeakClassifiers[i].m_Threshold));
+        fscanf_s(in, "%lf\n", &(m_WeakClassifiers[i].m_Weight));
     }
 
     fclose(in);
@@ -209,7 +209,7 @@ void MainWindow::DisplayClassifiers(QImage *displayImage, CWeakClassifiers *weak
 
     displayImage->fill(qRgb(0,0,0));
 
-    for(i=0;i<numWeakClassifiers & inBounds;i++)
+    for(i=0;i<numWeakClassifiers && inBounds;i++)
     {
         for(r=0;r<size;r++)
             for(c=0;c<size;c++)
@@ -491,7 +491,7 @@ void MainWindow::AdaBoost(double *features, int *trainingLabel, int numTrainingE
               CWeakClassifiers *candidateWeakClassifiers, int numCandidateWeakClassifiers, CWeakClassifiers *weakClassifiers, int numWeakClassifiers)
 {
     FILE *out;
-    out = fopen("AdaBoost.txt", "w");
+    fopen_s(&out, "AdaBoost.txt", "w");
     double *scores = new double [numTrainingExamples];
     double weightSum = 0.0;
     int *featureSortIdx = new int [numTrainingExamples*numCandidateWeakClassifiers];
