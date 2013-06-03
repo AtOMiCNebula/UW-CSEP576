@@ -903,71 +903,56 @@ void MainWindow::ComputeFeatures(double *integralImage, int c0, int r0, int size
 double MainWindow::FindBestClassifier(int *featureSortIdx, double *features, int *trainingLabel, double *dataWeights,
                                       int numTrainingExamples, CWeakClassifiers candidateWeakClassifier, CWeakClassifiers *bestClassifier)
 {
+    double bestError = 99999999.0;
+
     // Copy the weak classifiers params
     candidateWeakClassifier.copy(bestClassifier);
 
     // Calculate the sums of each feature type, so that we can normalize later.
     // Also calulate our list of thresholds for later
-    int sumWeights[2] = { 0, 0 }; // [0]=background, [1]=face
     int numThresholds = (numTrainingExamples + 1);
     double *thresholds = new double[numThresholds];
     thresholds[0] = (features[featureSortIdx[0]] - 1.0);
-    for (int i = 0; i < numTrainingExamples; i++)
+    for (int i = 1; i < numTrainingExamples; i++)
     {
-        sumWeights[trainingLabel[i]] += dataWeights[i];
-
-        if (i > 1)
-        {
-            double low = features[featureSortIdx[i-1]];
-            double high = features[featureSortIdx[i]];
-            thresholds[i] = (low + ((high - low) / 2));
-        }
+        double low = features[featureSortIdx[i-1]];
+        double high = features[featureSortIdx[i]];
+        thresholds[i] = (low + ((high - low) / 2));
     }
     thresholds[numThresholds-1] = (features[featureSortIdx[numTrainingExamples-1]] + 1.0);
 
     // Compare every threshold and polarity combination against all features
     const int numPolarities = 2;
-    double *responses = new double[numThresholds*numPolarities];
     for (int t = 0; t < numThresholds; t++)
     {
         double threshold = thresholds[t];
-        for (int i = 0; i < numTrainingExamples; i++)
+        for (int p = 0; p < numPolarities; p++)
         {
-            double feature = features[i];
-            for (int p = 0; p < numPolarities; p++)
+            double error = 0;
+            for (int i = 0; i < numTrainingExamples; i++)
             {
+                double feature = features[i];
                 bool actual = ((p == 1 && feature > threshold) || (p == 0 && feature < threshold));
                 bool expected = (trainingLabel[i] == 1);
 
                 // If our result does not match our ground truth, add error weights
                 if (actual != expected)
                 {
-                    double dataWeightNormalized = (dataWeights[i] / sumWeights[trainingLabel[i]]);
-                    responses[t*numPolarities+p] += dataWeightNormalized;
+                    error += dataWeights[i];
                 }
             }
-        }
-    }
 
-    // Look through our responses to find the best classifier
-    double bestError = -1;
-    for (int t = 0; t < numThresholds; t++)
-    {
-        for (int p = 0; p < numPolarities; p++)
-        {
-            double error = responses[t*numPolarities+p];
-            if (bestError == -1 || error < bestError)
+            if (error < bestError)
             {
                 bestError = error;
                 bestClassifier->m_Polarity = p;
-                bestClassifier->m_Threshold = t;
+                bestClassifier->m_Threshold = threshold;
                 bestClassifier->m_Weight = log((1-error) / error);
             }
         }
     }
 
     // Clean up!
-    delete[] responses;
     delete[] thresholds;
 
     return bestError;
@@ -984,7 +969,29 @@ double MainWindow::FindBestClassifier(int *featureSortIdx, double *features, int
 *******************************************************************************/
 void MainWindow::UpdateDataWeights(double *features, int *trainingLabel, CWeakClassifiers weakClassifier, double *dataWeights, int numTrainingExamples)
 {
-    // Add you code here.
+    double polarity = weakClassifier.m_Polarity;
+    double threshold = weakClassifier.m_Threshold;
+    double weight = weakClassifier.m_Weight;
+
+    double sumWeights = 0;
+    for (int i = 0; i < numTrainingExamples; i++)
+    {
+        double feature = features[i];
+        bool actual = ((polarity == 1 && feature > threshold) || (polarity == 0 && feature < threshold));
+        bool expected = (trainingLabel[i] == 1);
+        if (actual == expected)
+        {
+            dataWeights[i] *= (1 / pow(M_E, weight));
+        }
+
+        sumWeights += dataWeights[i];
+    }
+
+    // Normalize the weights!
+    for (int i = 0; i < numTrainingExamples; i++)
+    {
+        dataWeights[i] /= sumWeights;
+    }
 }
 
 /*******************************************************************************
