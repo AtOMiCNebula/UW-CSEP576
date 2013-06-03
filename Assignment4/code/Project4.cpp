@@ -1005,9 +1005,30 @@ void MainWindow::UpdateDataWeights(double *features, int *trainingLabel, CWeakCl
 *******************************************************************************/
 double MainWindow::ClassifyBox(double *integralImage, int c0, int r0, int size, CWeakClassifiers *weakClassifiers, int numWeakClassifiers, int w)
 {
-    // Add your code here.
+    // First, compute the features
+    double *features = new double[numWeakClassifiers];
+    ComputeFeatures(integralImage, c0, r0, size, features, weakClassifiers, numWeakClassifiers, w);
 
-    return 0.0;
+    // Then, sum up the weights of the faces if the features match the weak classifiers
+    double sumFaceWeights = 0;
+    double sumWeights = 0;
+    for (int i = 0; i < numWeakClassifiers; i++)
+    {
+        double feature = features[i];
+        double polarity = weakClassifiers[i].m_Polarity;
+        double threshold = weakClassifiers[i].m_Threshold;
+        double weight = weakClassifiers[i].m_Weight;
+        if ((polarity == 1 && feature > threshold) || (polarity == 0 && feature < threshold))
+        {
+            sumFaceWeights += weight;
+        }
+        sumWeights += weight;
+    }
+
+    // Clean up!
+    delete[] features;
+
+    return (sumFaceWeights - (0.5 * sumWeights));
 }
 
 /*******************************************************************************
