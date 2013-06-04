@@ -903,47 +903,74 @@ void MainWindow::ComputeFeatures(double *integralImage, int c0, int r0, int size
 double MainWindow::FindBestClassifier(int *featureSortIdx, double *features, int *trainingLabel, double *dataWeights,
                                       int numTrainingExamples, CWeakClassifiers candidateWeakClassifier, CWeakClassifiers *bestClassifier)
 {
-    double bestError = 99999999.0;
-
     // Copy the weak classifiers params
     candidateWeakClassifier.copy(bestClassifier);
 
-    // Calculate the sums of each feature type, so that we can normalize later.
-    // Also calulate our list of thresholds for later
-    int numThresholds = (numTrainingExamples + 1);
-    double *thresholds = new double[numThresholds];
-    thresholds[0] = (features[featureSortIdx[0]] - 1.0);
-    for (int i = 1; i < numTrainingExamples; i++)
+    // For each polaritiy...
+    double bestError = -1;
+    for (int p = 0; p < 2; p++)
     {
-        double low = features[featureSortIdx[i-1]];
-        double high = features[featureSortIdx[i]];
-        thresholds[i] = (low + ((high - low) / 2));
-    }
-    thresholds[numThresholds-1] = (features[featureSortIdx[numTrainingExamples-1]] + 1.0);
+        double error = 0;
 
-    // Compare every threshold and polarity combination against all features
-    const int numPolarities = 2;
-    for (int t = 0; t < numThresholds; t++)
-    {
-        double threshold = thresholds[t];
-        for (int p = 0; p < numPolarities; p++)
+        // Calculate the errors assuming we are at the left-most threshold
+        // (such that every feature is greater than the threshold).
+        for (int i = 0; i < numTrainingExamples; i++)
         {
-            double error = 0;
-            for (int i = 0; i < numTrainingExamples; i++)
+            if ((trainingLabel[i] != 0) != (p != 0))
             {
-                double feature = features[i];
-                bool actual = ((p == 1 && feature > threshold) || (p == 0 && feature < threshold));
-                bool expected = (trainingLabel[i] == 1);
+                // Ground truth doesn't match our current polarity, add error.
+                error += dataWeights[i];
+            }
+        }
 
-                // If our result does not match our ground truth, add error weights
-                if (actual != expected)
-                {
-                    error += dataWeights[i];
-                }
+        // Before we move thresholds, check if our error is already good...
+        if (bestError == -1 || error < bestError)
+        {
+            bestError = error;
+            bestClassifier->m_Polarity = p;
+            bestClassifier->m_Threshold = (features[featureSortIdx[0]] - 1.0);
+            bestClassifier->m_Weight = log((1-error) / error);
+        }
+
+        // Move from one threshold to the next, adjusting our error along the
+        // way.  We barely even need to calculate the specific threshold value
+        // itself (only for when we record the best classifier).  As we move
+        // forward, just flip error values as each individual feature becomes
+        // correct/incorrect based on the assumed threshold.
+        for (int j = 0; j < numTrainingExamples; j++)
+        {
+            int i = featureSortIdx[j];
+
+            // We just moved the threshold to the "right" of feature[i]...
+            if ((trainingLabel[i] != 0) == (p != 0))
+            {
+                // Our feature previously matched parity, and now it doesn't.
+                error += dataWeights[i];
+            }
+            else
+            {
+                // Our feature wasn't matching parity, and now it is!
+                error -= dataWeights[i];
             }
 
+            // Is this a good error value?
             if (error < bestError)
             {
+                double threshold;
+                if (j != (numTrainingExamples-1))
+                {
+                    // We've not yet moved past the last feature, so threshold
+                    // is between two features
+                    double low = features[i];
+                    threshold = (low + ((features[featureSortIdx[j+1]] - low) / 2));
+                }
+                else
+                {
+                    // Just moved past the last feature, so threshold is as far
+                    // right as it can be
+                    threshold = (features[i] + 1.0);
+                }
+
                 bestError = error;
                 bestClassifier->m_Polarity = p;
                 bestClassifier->m_Threshold = threshold;
@@ -951,9 +978,6 @@ double MainWindow::FindBestClassifier(int *featureSortIdx, double *features, int
             }
         }
     }
-
-    // Clean up!
-    delete[] thresholds;
 
     return bestError;
 
